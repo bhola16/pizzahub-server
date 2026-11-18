@@ -2,7 +2,7 @@
 import cors from "cors";
 import "dotenv/config";
 import express from "express";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 
 const app = express();
 const port = process.env.PORT || 8000;
@@ -19,27 +19,267 @@ if (!process.env.MONGODB_URI) {
 const client = new MongoClient(process.env.MONGODB_URI);
 
 const database = client.db("pizzahub");
+const pizzaMenusItems = database.collection("menuItems");
+const ordersCollection = database.collection("orders");
+
+
+await ordersCollection.createIndex(
+    { itemId: 1, customerEmail: 1 },
+    { unique: true }
+);
+
 
 export async function connectToMongoDB() {
     try {
         await client.connect();
         console.log("You successfully connected to MongoDB!");
         return database;
-    } catch (err) {
-        console.error("MongoDB connection failed:", err);
-        throw err;
+    } catch (error) {
+        console.error("MongoDB connection failed:", error);
+        throw error;
     }
 }
 
-// Routes
+// Get all approved and active menu items
+app.get("/menuItems", async (req, res) => {
+    try {
+        const { search, category, location } = req.query;
+
+        const query = {
+            status: "approved",
+            isActive: true,
+        };
+
+        if (search && String(search).trim()) {
+            query.name = {
+                $regex: String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                $options: "i",
+            };
+        }
+
+        if (category && category !== "All Categories") {
+            query.category = String(category);
+        }
+
+        if (location && location !== "All Locations") {
+            query.location = String(location);
+        }
+
+        const pizzas = await pizzaMenusItems
+            .find(query)
+            .sort({ createdAt: -1 })
+            .toArray();
+
+        res.status(200).json({
+            success: true,
+            count: pizzas.length,
+            data: pizzas,
+        });
+    } catch (error) {
+        console.error("Failed to fetch menu items:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch menu items",
+        });
+    }
+});
+
+// Check whether a customer has already ordered a menu item
+app.get("/orders/check", async (req, res) => {
+    try {
+        const { itemId, customerEmail } = req.query;
+
+        if (!itemId || !customerEmail) {
+            return res.status(400).json({
+                success: false,
+                message: "Item ID and customer email are required",
+            });
+        }
+
+        const order = await ordersCollection.findOne({
+            itemId: String(itemId),
+            customerEmail: String(customerEmail).trim().toLowerCase(),
+        });
+
+        res.status(200).json({
+            success: true,
+            alreadyOrdered: Boolean(order),
+            data: order || null,
+        });
+    } catch (error) {
+        console.error("Failed to check order:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to check order",
+        });
+    }
+});
+
+// Place an order
+app.post("/orders", async (req, res) => {
+    try {
+        const { itemId, customerName, customerEmail } = req.body;
+
+        if (!itemId || !customerEmail) {
+            return res.status(400).json({
+                success: false,
+                message: "Item ID and customer email are required",
+            });
+        }
+
+        if (!ObjectId.isValid(itemId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid menu item ID",
+            });
+        }
+
+        const normalizedEmail = String(customerEmail).trim().toLowerCase();
+
+        const item = await pizzaMenusItems.findOne({
+            _id: new ObjectId(itemId),
+            status: "approved",
+            isActive: true,
+        });
+
+        if (!item) {
+            return res.status(404).json({
+                success: false,
+                message: "Menu item is unavailable",
+            });
+        }
+
+        // Prevent a vendor from ordering their own item
+        if (
+            normalizedEmail ===
+            String(item.vendorEmail || "").trim().toLowerCase()
+        ) {
+            return res.status(403).json({
+                success: false,
+                message: "You cannot order your own menu item",
+            });
+        }
+
+        // Check for an existing order
+        const existingOrder = await ordersCollection.findOne({
+            itemId: String(item._id),
+            customerEmail: normalizedEmail,
+        });
+
+        if (existingOrder) {
+            return res.status(409).json({
+                success: false,
+                alreadyOrdered: true,
+                message: "You have already ordered this item",
+                data: existingOrder,
+            });
+        }
+
+        const newOrder = {
+            itemId: String(item._id),
+            itemName: item.name,
+            itemImage: item.images?.[0] || "",
+            price: item.price,
+            vendorName: item.vendorName,
+            vendorEmail: item.vendorEmail,
+            customerName: String(customerName || ""),
+            customerEmail: normalizedEmail,
+            status: "pending",
+            createdAt: new Date(),
+        };
+
+        const result = await ordersCollection.insertOne(newOrder);
+
+        res.status(201).json({
+            success: true,
+            message: "Order placed successfully",
+            data: {
+                ...newOrder,
+                _id: result.insertedId,
+            },
+        });
+    } catch (error) {
+        // The unique index also protects against simultaneous duplicate requests
+        if (error.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                alreadyOrdered: true,
+                message: "You have already ordered this item",
+            });
+        }
+
+        console.error("Failed to place order:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to place order",
+        });
+    }
+});
+
+
+
+
+
+
+
+
+
+// Get a single menu item by ID
+app.get("/menuItems/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid menu item ID",
+            });
+        }
+
+        const pizza = await pizzaMenusItems.findOne({
+            _id: new ObjectId(id),
+            status: "approved",
+            isActive: true,
+        });
+
+        if (!pizza) {
+            return res.status(404).json({
+                success: false,
+                message: "Menu item not found or unavailable",
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: pizza,
+        });
+    } catch (error) {
+        console.error("Failed to fetch menu item:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch menu item",
+        });
+    }
+});
+
+
+// Home route
 app.get("/", (req, res) => {
     res.send("Pizza-Hub is running!");
 });
+
 
 // Start Server
 async function startServer() {
     try {
         await connectToMongoDB();
+
+        await ordersCollection.createIndex(
+            { itemId: 1, customerEmail: 1 },
+            { unique: true }
+        );
 
         app.listen(port, () => {
             console.log(`Pizza-Hub is listening on port ${port}`);
@@ -49,5 +289,7 @@ async function startServer() {
         process.exit(1);
     }
 }
+
+startServer();
 
 startServer();
