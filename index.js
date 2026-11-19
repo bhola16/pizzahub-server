@@ -7,7 +7,7 @@ import { MongoClient, ObjectId } from "mongodb";
 
 const app = express();
 const port = process.env.PORT || 8000;
-const totalLimit = Number(process.env.NEXT_PUBLIC_UPGRADE_LIMIT) || 3;
+const totalLimit = Number(process.env.NEXT_PUBLIC_UPGRADE_LIMIT) || 8;
 
 // Middleware
 app.use(
@@ -458,6 +458,62 @@ app.get("/menuItems/:id", async (req, res) => {
         res.status(500).json({
             success: false,
             message: "Failed to fetch menu item",
+        });
+    }
+});
+
+
+//vendor dashboard
+app.get("/vendor-dashboard/:email", async (req, res) => {
+    try {
+        const vendorEmail = decodeURIComponent(req.params.email).toLowerCase();
+
+        const menuItemsCollection = database.collection("menuItems");
+        const ordersCollection = database.collection("orders");
+        const usersCollection = database.collection("users");
+
+        const [menuItems, orders, vendor] = await Promise.all([
+            menuItemsCollection
+                .find({ vendorEmail })
+                .toArray(),
+
+            ordersCollection
+                .find({ vendorEmail })
+                .toArray(),
+
+            usersCollection.findOne({
+                email: vendorEmail,
+            }),
+        ]);
+
+        const totalMenuItems = menuItems.length;
+
+        const activeMenuItems = menuItems.filter(
+            (item) =>
+                item.status?.toLowerCase() === "approved" &&
+                item.isActive === true,
+        ).length;
+
+        const pendingOrders = orders.filter(
+            (order) => order.status?.toLowerCase() === "pending",
+        ).length;
+
+        const acceptedOrders = orders.filter(
+            (order) => order.status?.toLowerCase() === "accepted",
+        ).length;
+
+        res.send({
+            totalMenuItems,
+            activeMenuItems,
+            pendingOrders,
+            acceptedOrders,
+            subscriptionPlan: vendor?.subscriptionPlan || "free",
+        });
+    } catch (error) {
+        console.error("Vendor dashboard error:", error);
+
+        res.status(500).send({
+            message: "Failed to fetch vendor dashboard data.",
         });
     }
 });
