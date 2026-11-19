@@ -30,13 +30,11 @@ const client = new MongoClient(process.env.MONGODB_URI);
 
 const database = client.db("pizzahub");
 const pizzaMenusItems = database.collection("menuItems");
+
 const ordersCollection = database.collection("orders");
 
 
-await ordersCollection.createIndex(
-    { itemId: 1, customerEmail: 1 },
-    { unique: true }
-);
+
 
 
 export async function connectToMongoDB() {
@@ -96,138 +94,358 @@ app.get("/menuItems", async (req, res) => {
 });
 
 // Check whether a customer has already ordered a menu item
+
+
+// Convert MongoDB document to frontend order format
+const formatOrder = (order) => {
+    const { _id, ...orderData } = order;
+
+    return {
+        ...orderData,
+        id: _id.toString(),
+    };
+};
+
+// Check existing active order
 app.get("/orders/check", async (req, res) => {
     try {
         const { itemId, customerEmail } = req.query;
 
-        if (!itemId || !customerEmail) {
-            return res.status(400).json({
-                success: false,
-                message: "Item ID and customer email are required",
-            });
-        }
-
         const order = await ordersCollection.findOne({
-            itemId: String(itemId),
-            customerEmail: String(customerEmail).trim().toLowerCase(),
+            itemId,
+            customerEmail: customerEmail.toLowerCase(),
+            status: { $in: ["pending", "accepted"] },
         });
 
-        res.status(200).json({
-            success: true,
-            alreadyOrdered: Boolean(order),
-            data: order || null,
+        res.send({
+            alreadyOrdered: !!order,
+            orderId: order?._id.toString(),
+            status: order?.status,
         });
     } catch (error) {
-        console.error("Failed to check order:", error);
-        res.status(500).json({
-            success: false,
-            message: "Failed to check order",
+        res.status(500).send({
+            message: "Failed to check existing order.",
         });
     }
 });
 
-// Place an order
-app.post("/orders", async (req, res) => {
+
+// Customer cancels and deletes their pending order
+app.patch("/orders/:id/withdraw", async (req, res) => {
     try {
-        const { itemId, customerName, customerEmail } = req.body;
+        const { customerEmail } = req.body;
 
-        if (!itemId || !customerEmail) {
-            return res.status(400).json({
+        if (
+            !ObjectId.isValid(req.params.id) ||
+            !customerEmail?.trim()
+        ) {
+            return res.status(400).send({
                 success: false,
-                message: "Item ID and customer email are required",
+                message: "Valid order ID and customer email are required.",
             });
         }
 
-        if (!ObjectId.isValid(itemId)) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid menu item ID",
-            });
-        }
-
-        const normalizedEmail = String(customerEmail).trim().toLowerCase();
-
-        const item = await pizzaMenusItems.findOne({
-            _id: new ObjectId(itemId),
-            status: "approved",
-            isActive: true,
+        const result = await ordersCollection.deleteOne({
+            _id: new ObjectId(req.params.id),
+            customerEmail: customerEmail.trim().toLowerCase(),
+            status: "pending",
         });
 
-        if (!item) {
-            return res.status(404).json({
+        if (result.deletedCount === 0) {
+            return res.status(404).send({
                 success: false,
-                message: "Menu item is unavailable",
+                message: "Order not found or can no longer be cancelled.",
             });
         }
 
-        // Prevent a vendor from ordering their own item
+        res.send({
+            success: true,
+            message: "Order cancelled successfully.",
+        });
+    } catch (error) {
+        console.error("Cancel order error:", error);
+
+        res.status(500).send({
+            success: false,
+            message: "Failed to cancel order.",
+        });
+    }
+});
+
+// Place new order
+
+app.post("/orders", async (req, res) => {
+    try {
+        const {
+            itemId,
+            customerName,
+            customerEmail,
+            deliveryDate,
+            deliveryAddress,
+            customerMessage,
+        } = req.body;
+
+        // Validate required fields
         if (
-            normalizedEmail ===
-            String(item.vendorEmail || "").trim().toLowerCase()
+            !itemId ||
+            !ObjectId.isValid(itemId) ||
+            typeof customerName !== "string" ||
+            !customerName.trim() ||
+            typeof customerEmail !== "string" ||
+            !customerEmail.trim() ||
+            typeof deliveryAddress !== "string" ||
+            !deliveryAddress.trim() ||
+            typeof deliveryDate !== "string"
         ) {
-            return res.status(403).json({
+            return res.status(400).send({
                 success: false,
-                message: "You cannot order your own menu item",
+                message: "Please provide all required order information.",
             });
         }
 
-        // Check for an existing order
+        // Validate delivery date format
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) {
+            return res.status(400).send({
+                success: false,
+                message: "Invalid delivery date.",
+            });
+        }
+
+        // Validate actual calendar date
+        const [year, month, day] = deliveryDate.split("-").map(Number);
+
+        const selectedDate = new Date(year, month - 1, day);
+
+        if (
+            selectedDate.getFullYear() !== year ||
+            selectedDate.getMonth() !== month - 1 ||
+            selectedDate.getDate() !== day
+        ) {
+            return res.status(400).send({
+                success: false,
+                message: "Invalid delivery date.",
+            });
+        }
+
+        // Get today's date using server local time
+        const now = new Date();
+
+        const todayString = [
+            now.getFullYear(),
+            String(now.getMonth() + 1).padStart(2, "0"),
+            String(now.getDate()).padStart(2, "0"),
+        ].join("-");
+
+        // Allow today or future dates
+        if (deliveryDate < todayString) {
+            return res.status(400).send({
+                success: false,
+                message: "Please select today or a future delivery date.",
+            });
+        }
+
+        const normalizedEmail = customerEmail.trim().toLowerCase();
+
+        // Find menu item
+        const menuItem = await pizzaMenusItems.findOne({
+            _id: new ObjectId(itemId),
+        });
+
+        if (!menuItem) {
+            return res.status(404).send({
+                success: false,
+                message: "Menu item not found.",
+            });
+        }
+
+        // Check menu item availability
+        if (
+            menuItem.status !== "approved" ||
+            menuItem.isActive !== true
+        ) {
+            return res.status(400).send({
+                success: false,
+                message: "This menu item is currently unavailable.",
+            });
+        }
+
+        // Prevent vendors from ordering their own menu items
+        if (
+            menuItem.vendorEmail?.trim().toLowerCase() === normalizedEmail
+        ) {
+            return res.status(403).send({
+                success: false,
+                message: "You cannot order your own menu item.",
+            });
+        }
+
+        // Prevent duplicate active orders
         const existingOrder = await ordersCollection.findOne({
-            itemId: String(item._id),
+            itemId,
             customerEmail: normalizedEmail,
+            status: { $in: ["pending", "accepted"] },
         });
 
         if (existingOrder) {
-            return res.status(409).json({
+            return res.status(409).send({
                 success: false,
                 alreadyOrdered: true,
-                message: "You have already ordered this item",
-                data: existingOrder,
+                message: "You already have an active order for this item.",
             });
         }
 
+        // Create new order
         const newOrder = {
-            itemId: String(item._id),
-            itemName: item.name,
-            itemImage: item.images?.[0] || "",
-            price: item.price,
-            vendorName: item.vendorName,
-            vendorEmail: item.vendorEmail,
-            customerName: String(customerName || ""),
+            itemId,
+            itemName: menuItem.name,
+            itemImage: menuItem.images?.[0] || "",
+            price: Number(menuItem.price),
+
+            vendorName: menuItem.vendorName || "",
+            vendorEmail: menuItem.vendorEmail?.trim().toLowerCase() || "",
+
+            customerName: customerName.trim(),
             customerEmail: normalizedEmail,
+
+            deliveryDate,
+            deliveryAddress: deliveryAddress.trim(),
+            customerMessage:
+                typeof customerMessage === "string"
+                    ? customerMessage.trim()
+                    : "",
+
             status: "pending",
             createdAt: new Date(),
         };
 
+        // Save order
         const result = await ordersCollection.insertOne(newOrder);
 
-        res.status(201).json({
+        // Send response
+        res.status(201).send({
             success: true,
-            message: "Order placed successfully",
+            message: "Order placed successfully.",
             data: {
                 ...newOrder,
-                _id: result.insertedId,
+                id: result.insertedId.toString(),
             },
         });
     } catch (error) {
-        // The unique index also protects against simultaneous duplicate requests
-        if (error.code === 11000) {
-            return res.status(409).json({
-                success: false,
-                alreadyOrdered: true,
-                message: "You have already ordered this item",
-            });
-        }
+        console.error("Place order error:", error);
 
-        console.error("Failed to place order:", error);
-        res.status(500).json({
+        res.status(500).send({
             success: false,
-            message: "Failed to place order",
+            message: error.message || "Failed to place order.",
         });
     }
 });
 
-// add menu items
+
+
+// Get customer's orders
+app.get("/orders/customer/:email", async (req, res) => {
+    try {
+        const orders = await ordersCollection
+            .find({
+                customerEmail: req.params.email.toLowerCase(),
+            })
+            .sort({ createdAt: -1 })
+            .toArray();
+
+        res.send(
+            orders.map(({ _id, ...order }) => ({
+                ...order,
+                id: _id.toString(),
+            })),
+        );
+    } catch (error) {
+        res.status(500).send({
+            message: "Failed to fetch customer orders.",
+        });
+    }
+});
+
+
+
+
+
+
+// Get vendor's orders
+app.get("/orders/vendor/:email", async (req, res) => {
+    try {
+        const vendorEmail = decodeURIComponent(req.params.email).toLowerCase();
+
+        const orders = await ordersCollection
+            .find({ vendorEmail })
+            .sort({ createdAt: -1 })
+            .toArray();
+
+        res.send(orders.map(formatOrder));
+    } catch (error) {
+        console.error("Vendor orders error:", error);
+        res.status(500).send({
+            message: "Failed to fetch vendor orders.",
+        });
+    }
+});
+
+// Vendor accepts or rejects their own pending order
+app.patch("/orders/:id/vendor-status", async (req, res) => {
+    try {
+        const { vendorEmail, status } = req.body;
+
+        if (!ObjectId.isValid(req.params.id) || !vendorEmail?.trim()) {
+            return res.status(400).send({
+                message: "Valid order ID and vendor email are required.",
+            });
+        }
+
+        if (!["accepted", "rejected"].includes(status)) {
+            return res.status(400).send({
+                message: "Status must be accepted or rejected.",
+            });
+        }
+
+        const result = await ordersCollection.updateOne(
+            {
+                _id: new ObjectId(req.params.id),
+                vendorEmail: vendorEmail.trim().toLowerCase(),
+                status: "pending",
+            },
+            {
+                $set: {
+                    status,
+                    updatedAt: new Date(),
+                },
+            },
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(400).send({
+                message: "Order not found or it has already been processed.",
+            });
+        }
+
+        res.send({
+            success: true,
+            message: `Order ${status} successfully.`,
+        });
+    } catch (error) {
+        console.error("Vendor order update error:", error);
+        res.status(500).send({
+            message: "Failed to update order status.",
+        });
+    }
+});
+
+
+
+
+
+
+
+
+
 // Add menu items
 app.post("/menuItems", async (req, res) => {
     try {
@@ -468,12 +686,12 @@ app.get("/vendor-dashboard/:email", async (req, res) => {
     try {
         const vendorEmail = decodeURIComponent(req.params.email).toLowerCase();
 
-        const menuItemsCollection = database.collection("menuItems");
+        const pizzaMenusItems = database.collection("menuItems");
         const ordersCollection = database.collection("orders");
         const usersCollection = database.collection("users");
 
         const [menuItems, orders, vendor] = await Promise.all([
-            menuItemsCollection
+            pizzaMenusItems
                 .find({ vendorEmail })
                 .toArray(),
 
@@ -519,6 +737,47 @@ app.get("/vendor-dashboard/:email", async (req, res) => {
 });
 
 
+
+// customer dashboard
+app.get("/customer-dashboard/:email", async (req, res) => {
+  try {
+    const customerEmail = decodeURIComponent(req.params.email).toLowerCase();
+
+    const ordersCollection = database.collection("orders");
+
+    const orders = await ordersCollection
+      .find({ customerEmail })
+      .toArray();
+
+    const totalOrders = orders.length;
+
+    const pendingOrders = orders.filter(
+      (order) => order.status?.toLowerCase() === "pending"
+    ).length;
+
+    const acceptedOrders = orders.filter(
+      (order) => order.status?.toLowerCase() === "accepted"
+    ).length;
+
+    const rejectedOrders = orders.filter(
+      (order) => order.status?.toLowerCase() === "rejected"
+    ).length;
+
+    res.send({
+      totalOrders,
+      pendingOrders,
+      acceptedOrders,
+      rejectedOrders,
+    });
+  } catch (error) {
+    console.error("Customer dashboard error:", error);
+
+    res.status(500).send({
+      message: "Failed to fetch customer dashboard data.",
+    });
+  }
+});
+
 // Home route
 app.get("/", (req, res) => {
     res.send("Pizza-Hub is running!");
@@ -530,10 +789,7 @@ async function startServer() {
     try {
         await connectToMongoDB();
 
-        await ordersCollection.createIndex(
-            { itemId: 1, customerEmail: 1 },
-            { unique: true }
-        );
+        
 
         app.listen(port, () => {
             console.log(`Pizza-Hub is listening on port ${port}`);
