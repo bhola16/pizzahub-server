@@ -3,13 +3,23 @@ import cors from "cors";
 import "dotenv/config";
 import express from "express";
 import { MongoClient, ObjectId } from "mongodb";
+// import { auth } from "./auth";
 
 const app = express();
 const port = process.env.PORT || 8000;
+const totalLimit = Number(process.env.NEXT_PUBLIC_UPGRADE_LIMIT) || 3;
 
 // Middleware
+app.use(
+    cors({
+        origin: "http://localhost:3000",
+        credentials: true,
+    })
+);
+
 app.use(express.json());
-app.use(cors());
+app.use(express.json());
+
 
 // MongoDB
 if (!process.env.MONGODB_URI) {
@@ -217,8 +227,104 @@ app.post("/orders", async (req, res) => {
     }
 });
 
+// add menu items
+// Add menu items
+app.post("/menuItems", async (req, res) => {
+    try {
+        const {
+            name,
+            category,
+            description,
+            price,
+            location,
+            images,
+            vendorName,
+            vendorEmail,
+            plan,
+        } = req.body;
 
+        // Required field validation
+        if (
+            !name?.trim() ||
+            !category ||
+            !description?.trim() ||
+            !price ||
+            Number(price) <= 0 ||
+            !location?.trim() ||
+            !Array.isArray(images) ||
+            images.length === 0 ||
+            !vendorName?.trim() ||
+            !vendorEmail?.trim()
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "All fields are required.",
+            });
+        }
 
+        // Check vendor's existing menu items
+        const totalItems = await pizzaMenusItems.countDocuments({
+            vendorEmail: vendorEmail,
+        });
+
+        // Free plan limit
+        if (
+            String(plan || "free").toLowerCase() === "free" &&
+            totalItems >= totalLimit
+        ) {
+            return res.status(403).json({
+                success: false,
+                upgradeRequired: true,
+                message: `You have reached the ${totalLimit}-item limit. Upgrade to Premium to add more menu items.`,
+            });
+        }
+
+        // New menu item
+        const newMenuItem = {
+            name: name.trim(),
+            category,
+            description: description.trim(),
+            price: Number(price),
+            location: location.trim(),
+            images,
+            vendorName: vendorName.trim(),
+            vendorEmail: vendorEmail.trim(),
+            status: "pending",
+            isActive: false,
+            createdAt: new Date(),
+        };
+
+        const result = await pizzaMenusItems.insertOne(newMenuItem);
+
+        return res.status(201).json({
+            success: true,
+            message: "Menu item submitted for admin approval.",
+            data: {
+                ...newMenuItem,
+                _id: result.insertedId,
+            },
+        });
+    } catch (error) {
+        console.error("Failed to add menu item:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to add menu item.",
+        });
+    }
+});
+
+app.get("/menuItems/count/:email", async (req, res) => {
+    try {
+        const totalItems = await pizzaMenusItems.countDocuments({
+            vendorEmail: req.params.email,
+        });
+
+        res.send({ totalItems });
+    } catch (error) {
+        res.status(500).send({ message: "Failed to fetch menu item count." });
+    }
+});
 
 
 
