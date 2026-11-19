@@ -328,8 +328,100 @@ app.get("/menuItems/count/:email", async (req, res) => {
 
 
 
+app.get("/vendor-menu-items/:email", async (req, res) => {
+    try {
+        const items = await pizzaMenusItems
+            .find({ vendorEmail: req.params.email })
+            .sort({ createdAt: -1 })
+            .toArray();
 
+        res.send(items);
+    } catch (error) {
+        res.status(500).send({ message: "Failed to fetch menu items." });
+    }
+});
 
+// update a menu item
+app.put("/menuItems/:id", async (req, res) => {
+    try {
+        const { name, category, description, price, location, images, vendorEmail } =
+            req.body;
+
+        const result = await pizzaMenusItems.updateOne(
+            {
+                _id: new ObjectId(req.params.id),
+                vendorEmail,
+            },
+            {
+                $set: {
+                    name,
+                    category,
+                    description,
+                    price: Number(price),
+                    location,
+                    images,
+                },
+            }
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(404).send({ message: "Menu item not found." });
+        }
+
+        res.send({ success: true, message: "Menu item updated successfully." });
+    } catch (error) {
+        res.status(500).send({ message: "Failed to update menu item." });
+    }
+});
+
+// delete a menu item 
+app.delete("/menuItems/:id", async (req, res) => {
+    try {
+        const result = await pizzaMenusItems.deleteOne({
+            _id: new ObjectId(req.params.id),
+            vendorEmail: req.body.vendorEmail,
+        });
+
+        if (result.deletedCount === 0) {
+            return res.status(404).send({ message: "Menu item not found." });
+        }
+
+        res.send({ success: true, message: "Menu item deleted successfully." });
+    } catch (error) {
+        res.status(500).send({ message: "Failed to delete menu item." });
+    }
+});
+
+// manage availability 
+app.patch("/menuItems/:id/availability", async (req, res) => {
+    try {
+        const { vendorEmail, isActive } = req.body;
+
+        const result = await pizzaMenusItems.updateOne(
+            {
+                _id: new ObjectId(req.params.id),
+                vendorEmail,
+                status: "approved",
+            },
+            {
+                $set: { isActive },
+            }
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(404).send({
+                message: "Approved menu item not found.",
+            });
+        }
+
+        res.send({
+            success: true,
+            message: "Availability updated successfully.",
+        });
+    } catch (error) {
+        res.status(500).send({ message: "Failed to update availability." });
+    }
+});
 
 // Get a single menu item by ID
 app.get("/menuItems/:id", async (req, res) => {
