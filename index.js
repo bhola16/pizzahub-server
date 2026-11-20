@@ -11,11 +11,12 @@ const port = process.env.PORT || 8000;
 const totalLimit = Number(process.env.NEXT_PUBLIC_UPGRADE_LIMIT) || 3;
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const origin_url = process.env.CLIENT_URL 
 
 // Middleware
 app.use(
     cors({
-        origin: "http://localhost:3000",
+        origin: origin_url,
         credentials: true,
     })
 );
