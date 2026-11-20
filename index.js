@@ -53,158 +53,6 @@ export async function connectToMongoDB() {
 
 
 
-
-
-
-// Payment API
-app.post("/payments/checkout-verify", async (req, res) => {
-    try {
-        const { sessionId } = req.body;
-
-        // 1. Validate session ID
-        if (!sessionId) {
-            return res.status(400).send({
-                success: false,
-                message: "Session ID is required.",
-            });
-        }
-
-        // 2. Retrieve Checkout Session directly from Stripe
-        const session = await stripe.checkout.sessions.retrieve(sessionId);
-
-        const {
-            id,
-            status,
-            payment_status,
-            customer_email,
-            customer_details,
-            metadata,
-            payment_intent,
-            amount_total,
-            currency,
-        } = session;
-
-        console.log("Backend Stripe session:", {
-            id,
-            status,
-            payment_status,
-            metadata,
-        });
-
-        // 3. Verify payment status
-        if (status !== "complete" || payment_status !== "paid") {
-            return res.status(400).send({
-                success: false,
-                message: "Payment verification failed.",
-            });
-        }
-
-        // 4. Validate user ID from Stripe metadata
-        const userId = metadata?.userId;
-
-        if (!userId || !ObjectId.isValid(userId)) {
-            return res.status(400).send({
-                success: false,
-                message: "Invalid user ID.",
-            });
-        }
-
-        const vendorObjectId = new ObjectId(userId);
-
-        // 5. Find vendor
-        const vendor = await users.findOne({
-            _id: vendorObjectId,
-        });
-
-        if (!vendor) {
-            return res.status(404).send({
-                success: false,
-                message: "Vendor not found.",
-            });
-        }
-
-        // 6. Activate Premium subscription
-        // This also repairs the subscription if payment was saved earlier.
-        const updateResult = await users.updateOne(
-            { _id: vendorObjectId },
-            {
-                $set: {
-                    premium: true,
-                    subscriptionPlan: "premium",
-                    subscriptionStatus: "active",
-                    subscriptionUpdatedAt: new Date(),
-                },
-            }
-        );
-
-        if (updateResult.matchedCount === 0) {
-            return res.status(404).send({
-                success: false,
-                message: "Vendor subscription could not be updated.",
-            });
-        }
-
-        // 7. Check whether transaction already exists
-        const existingPayment = await payments.findOne({
-            sessionId: id,
-        });
-
-        // 8. Insert transaction only once
-        if (!existingPayment) {
-            const paymentData = {
-                sessionId: id,
-                userId,
-                status,
-                payment_status,
-                customer_email:
-                    customer_email ||
-                    customer_details?.email ||
-                    vendor.email,
-                payment_intent,
-                amount: (amount_total || 0) / 100,
-                currency,
-                plan: "premium",
-                payment_date: new Date(),
-            };
-
-            const result = await payments.insertOne(paymentData);
-
-            console.log("Payment saved:", result.insertedId);
-        } else {
-            console.log("Payment already exists:", id);
-        }
-
-        console.log("Vendor upgraded successfully:", userId);
-
-        // 9. Return success
-        return res.status(200).send({
-            success: true,
-            message: existingPayment
-                ? "Payment already verified. Premium subscription is active."
-                : "Payment verified successfully. Premium activated!",
-        });
-
-    } catch (error) {
-        console.error("Checkout verification error:", error);
-
-        return res.status(500).send({
-            success: false,
-            message:
-                error instanceof Error
-                    ? error.message
-                    : "Payment verification failed.",
-        });
-    }
-});
-
-
-
-
-
-
-
-
-
 // Get all approved and active menu items
 app.get("/menuItems", async (req, res) => {
     try {
@@ -612,23 +460,172 @@ app.get("/orders/customer/:email", async (req, res) => {
 });
 
 
+// Payment API
+app.post("/payments/checkout-verify", async (req, res) => {
+    try {
+        const { sessionId } = req.body;
+
+        // 1. Validate session ID
+        if (!sessionId) {
+            return res.status(400).send({
+                success: false,
+                message: "Session ID is required.",
+            });
+        }
+
+        // 2. Retrieve Checkout Session directly from Stripe
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+        const {
+            id,
+            status,
+            payment_status,
+            customer_email,
+            customer_details,
+            metadata,
+            payment_intent,
+            amount_total,
+            currency,
+        } = session;
+
+        console.log("Backend Stripe session:", {
+            id,
+            status,
+            payment_status,
+            metadata,
+        });
+
+        // 3. Verify payment status
+        if (status !== "complete" || payment_status !== "paid") {
+            return res.status(400).send({
+                success: false,
+                message: "Payment verification failed.",
+            });
+        }
+
+        // 4. Validate user ID from Stripe metadata
+        const userId = metadata?.userId;
+
+        if (!userId || !ObjectId.isValid(userId)) {
+            return res.status(400).send({
+                success: false,
+                message: "Invalid user ID.",
+            });
+        }
+
+        const vendorObjectId = new ObjectId(userId);
+
+        // 5. Find vendor
+        const vendor = await users.findOne({
+            _id: vendorObjectId,
+        });
+
+        if (!vendor) {
+            return res.status(404).send({
+                success: false,
+                message: "Vendor not found.",
+            });
+        }
+
+        // 6. Activate Premium subscription
+        // This also repairs the subscription if payment was saved earlier.
+        const updateResult = await users.updateOne(
+            { _id: vendorObjectId },
+            {
+                $set: {
+                    premium: true,
+                    subscriptionPlan: "premium",
+                    subscriptionStatus: "active",
+                    subscriptionUpdatedAt: new Date(),
+                },
+            }
+        );
+
+        if (updateResult.matchedCount === 0) {
+            return res.status(404).send({
+                success: false,
+                message: "Vendor subscription could not be updated.",
+            });
+        }
+
+        // 7. Check whether transaction already exists
+        const existingPayment = await payments.findOne({
+            sessionId: id,
+        });
+
+        // 8. Insert transaction only once
+        if (!existingPayment) {
+            const paymentData = {
+                sessionId: id,
+                userId,
+                status,
+                payment_status,
+                customer_email:
+                    customer_email ||
+                    customer_details?.email ||
+                    vendor.email,
+                payment_intent,
+                amount: (amount_total || 0) / 100,
+                currency,
+                plan: "premium",
+                payment_date: new Date(),
+            };
+
+            const result = await payments.insertOne(paymentData);
+
+            console.log("Payment saved:", result.insertedId);
+        } else {
+            console.log("Payment already exists:", id);
+        }
+
+        console.log("Vendor upgraded successfully:", userId);
+
+        // 9. Return success
+        return res.status(200).send({
+            success: true,
+            message: existingPayment
+                ? "Payment already verified. Premium subscription is active."
+                : "Payment verified successfully. Premium activated!",
+        });
+
+    } catch (error) {
+        console.error("Checkout verification error:", error);
+
+        return res.status(500).send({
+            success: false,
+            message:
+                error instanceof Error
+                    ? error.message
+                    : "Payment verification failed.",
+        });
+    }
+});
 
 
+app.get("/users/:id/premium", async (req, res) => {
+    try {
+        const { id } = req.params;
 
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).send({ message: "Invalid user ID" });
+        }
 
+        const result = await users.findOne(
+            { _id: new ObjectId(id) },
+            { projection: { premium: 1 } }
+        );
 
+        if (!result) {
+            return res.status(404).send({ message: "User not found" });
+        }
 
-
-
-
-
-
-
-
-
-
-
-
+        res.send({
+            premium: result.premium || false,
+        });
+    } catch (error) {
+        res.status(500).send({ message: "Failed to fetch premium status" });
+    }
+});
 
 
 
@@ -989,8 +986,6 @@ app.get("/vendor-dashboard/:email", async (req, res) => {
 });
 
 
-
-
 // Customer Dashboard
 app.get("/customer-dashboard/:email", async (req, res) => {
     try {
@@ -1096,9 +1091,6 @@ app.get("/", (req, res) => {
 async function startServer() {
     try {
         await connectToMongoDB();
-
-        
-
         app.listen(port, () => {
             console.log(`Pizza-Hub is listening on port ${port}`);
         });
