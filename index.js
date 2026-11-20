@@ -3,11 +3,11 @@ import cors from "cors";
 import "dotenv/config";
 import express from "express";
 import { MongoClient, ObjectId } from "mongodb";
-// import { auth } from "./auth";
+
 
 const app = express();
 const port = process.env.PORT || 8000;
-const totalLimit = Number(process.env.NEXT_PUBLIC_UPGRADE_LIMIT) || 8;
+const totalLimit = Number(process.env.NEXT_PUBLIC_UPGRADE_LIMIT) || 3;
 
 // Middleware
 app.use(
@@ -770,27 +770,21 @@ app.get("/menuItems/:id", async (req, res) => {
 });
 
 
-//vendor dashboard
+// Vendor dashboard
 app.get("/vendor-dashboard/:email", async (req, res) => {
     try {
-        const vendorEmail = decodeURIComponent(req.params.email).toLowerCase();
+        const vendorEmail = decodeURIComponent(req.params.email)
+            .trim()
+            .toLowerCase();
 
-        const pizzaMenusItems = database.collection("menuItems");
-        const ordersCollection = database.collection("orders");
         const usersCollection = database.collection("users");
 
         const [menuItems, orders, vendor] = await Promise.all([
-            pizzaMenusItems
-                .find({ vendorEmail })
-                .toArray(),
+            pizzaMenusItems.find({ vendorEmail }).toArray(),
 
-            ordersCollection
-                .find({ vendorEmail })
-                .toArray(),
+            ordersCollection.find({ vendorEmail }).toArray(),
 
-            usersCollection.findOne({
-                email: vendorEmail,
-            }),
+            usersCollection.findOne({ email: vendorEmail }),
         ]);
 
         const totalMenuItems = menuItems.length;
@@ -798,28 +792,31 @@ app.get("/vendor-dashboard/:email", async (req, res) => {
         const activeMenuItems = menuItems.filter(
             (item) =>
                 item.status?.toLowerCase() === "approved" &&
-                item.isActive === true,
+                item.isActive === true
         ).length;
 
         const pendingOrders = orders.filter(
-            (order) => order.status?.toLowerCase() === "pending",
+            (order) => order.status?.toLowerCase() === "pending"
         ).length;
 
         const acceptedOrders = orders.filter(
-            (order) => order.status?.toLowerCase() === "accepted",
+            (order) => order.status?.toLowerCase() === "accepted"
         ).length;
 
-        res.send({
+        res.status(200).json({
+            success: true,
             totalMenuItems,
             activeMenuItems,
             pendingOrders,
             acceptedOrders,
             subscriptionPlan: vendor?.subscriptionPlan || "free",
+            subscriptionStatus: vendor?.subscriptionStatus || "inactive",
         });
     } catch (error) {
         console.error("Vendor dashboard error:", error);
 
-        res.status(500).send({
+        res.status(500).json({
+            success: false,
             message: "Failed to fetch vendor dashboard data.",
         });
     }
@@ -827,44 +824,100 @@ app.get("/vendor-dashboard/:email", async (req, res) => {
 
 
 
-// customer dashboard
+
+// Customer Dashboard
 app.get("/customer-dashboard/:email", async (req, res) => {
-  try {
-    const customerEmail = decodeURIComponent(req.params.email).toLowerCase();
+    try {
+        const customerEmail = decodeURIComponent(req.params.email)
+            .trim()
+            .toLowerCase();
 
-    const ordersCollection = database.collection("orders");
+        const ordersCollection = database.collection("orders");
 
-    const orders = await ordersCollection
-      .find({ customerEmail })
-      .toArray();
+        const orders = await ordersCollection
+            .find({ customerEmail })
+            .sort({ createdAt: -1 })
+            .toArray();
 
-    const totalOrders = orders.length;
+        const totalOrders = orders.length;
 
-    const pendingOrders = orders.filter(
-      (order) => order.status?.toLowerCase() === "pending"
-    ).length;
+        const pendingOrders = orders.filter(
+            (order) => order.status?.toLowerCase() === "pending"
+        ).length;
 
-    const acceptedOrders = orders.filter(
-      (order) => order.status?.toLowerCase() === "accepted"
-    ).length;
+        const acceptedOrders = orders.filter(
+            (order) => order.status?.toLowerCase() === "accepted"
+        ).length;
 
-    const rejectedOrders = orders.filter(
-      (order) => order.status?.toLowerCase() === "rejected"
-    ).length;
+        const rejectedOrders = orders.filter(
+            (order) => order.status?.toLowerCase() === "rejected"
+        ).length;
 
-    res.send({
-      totalOrders,
-      pendingOrders,
-      acceptedOrders,
-      rejectedOrders,
-    });
-  } catch (error) {
-    console.error("Customer dashboard error:", error);
+        res.status(200).send({
+            success: true,
+            totalOrders,
+            pendingOrders,
+            acceptedOrders,
+            rejectedOrders,
+        });
+    } catch (error) {
+        console.error("Customer dashboard error:", error);
 
-    res.status(500).send({
-      message: "Failed to fetch customer dashboard data.",
-    });
-  }
+        res.status(500).send({
+            success: false,
+            message: "Failed to fetch customer dashboard data.",
+        });
+    }
+});
+
+// Customer Dashboard
+app.post("/customer-dashboard", async (req, res) => {
+    try {
+        const customerEmail = req.body.email?.trim().toLowerCase();
+
+        if (!customerEmail) {
+            return res.status(400).send({
+                success: false,
+                message: "Customer email is required.",
+            });
+        }
+
+        const ordersCollection = database.collection("orders");
+
+        const orders = await ordersCollection
+            .find({ customerEmail })
+            .sort({ createdAt: -1 })
+            .toArray();
+
+        const totalOrders = orders.length;
+
+        const pendingOrders = orders.filter(
+            (order) => order.status?.toLowerCase() === "pending"
+        ).length;
+
+        const acceptedOrders = orders.filter(
+            (order) => order.status?.toLowerCase() === "accepted"
+        ).length;
+
+        const rejectedOrders = orders.filter(
+            (order) => order.status?.toLowerCase() === "rejected"
+        ).length;
+
+        res.status(200).send({
+            success: true,
+            totalOrders,
+            pendingOrders,
+            acceptedOrders,
+            rejectedOrders,
+        });
+    } catch (error) {
+        console.error("Customer dashboard error:", error);
+
+        res.status(500).send({
+            success: false,
+            message: "Failed to fetch customer dashboard data.",
+        });
+    }
 });
 
 // Home route
