@@ -172,6 +172,95 @@ app.patch("/orders/:id/withdraw", async (req, res) => {
     }
 });
 
+// Delete a rejected order permanently
+app.delete("/orders/:id/rejected", async (req, res) => {
+    try {
+        const { customerEmail } = req.body;
+
+        if (!ObjectId.isValid(req.params.id) || !customerEmail?.trim()) {
+            return res.status(400).send({
+                success: false,
+                message: "Valid order ID and customer email are required.",
+            });
+        }
+
+        const result = await ordersCollection.deleteOne({
+            _id: new ObjectId(req.params.id),
+            customerEmail: customerEmail.trim().toLowerCase(),
+            status: "rejected",
+        });
+
+        if (result.deletedCount === 0) {
+            return res.status(404).send({
+                success: false,
+                message: "Rejected order not found.",
+            });
+        }
+
+        res.send({
+            success: true,
+            message: "Rejected order deleted successfully.",
+        });
+    } catch (error) {
+        console.error("Delete rejected order error:", error);
+
+        res.status(500).send({
+            success: false,
+            message: "Failed to delete rejected order.",
+        });
+    }
+});
+
+app.patch("/orders/:id/vendor-status", async (req, res) => {
+    try {
+        const { vendorEmail, status } = req.body;
+
+        if (
+            !ObjectId.isValid(req.params.id) ||
+            !vendorEmail?.trim() ||
+            !["accepted", "rejected"].includes(status)
+        ) {
+            return res.status(400).send({
+                success: false,
+                message: "Invalid order information.",
+            });
+        }
+
+        const result = await ordersCollection.updateOne(
+            {
+                _id: new ObjectId(req.params.id),
+                vendorEmail: vendorEmail.trim().toLowerCase(),
+                status: "pending",
+            },
+            {
+                $set: {
+                    status,
+                    updatedAt: new Date(),
+                },
+            },
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(404).send({
+                success: false,
+                message: "Order not found or has already been processed.",
+            });
+        }
+
+        res.send({
+            success: true,
+            message: `Order ${status} successfully.`,
+        });
+    } catch (error) {
+        console.error("Vendor order update error:", error);
+
+        res.status(500).send({
+            success: false,
+            message: "Failed to update order status.",
+        });
+    }
+});
+
 // Place new order
 
 app.post("/orders", async (req, res) => {
