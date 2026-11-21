@@ -516,6 +516,54 @@ app.get("/admin/transactions", async (req, res) => {
 
 
 
+app.get("/admin/dashboard/stats", async (req, res) => {
+    try {
+        const [
+            totalUsers,
+            totalVendors,
+            totalCustomers,
+            totalMenuItems,
+            pendingMenuItems,
+            totalTransactions,
+        ] = await Promise.all([
+            users.countDocuments(),
+
+            users.countDocuments({
+                $or: [{ accountType: "vendor" }, { role: "vendor" }],
+            }),
+
+            users.countDocuments({
+                $or: [{ accountType: "customer" }, { role: "customer" }],
+            }),
+
+            pizzaMenusItems.countDocuments(),
+
+            pizzaMenusItems.countDocuments({ status: "pending" }),
+
+            payments.countDocuments(),
+        ]);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                totalUsers,
+                totalVendors,
+                totalCustomers,
+                totalMenuItems,
+                pendingMenuItems,
+                totalTransactions,
+            },
+        });
+    } catch (error) {
+        console.error("Admin dashboard stats error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch dashboard statistics.",
+        });
+    }
+});
+
 
 
 
