@@ -99,7 +99,32 @@ app.get("/menuItems", async (req, res) => {
     }
 });
 
-// Check whether a customer has already ordered a menu item
+// Get latest 6 approved and active menu items
+app.get("/menuItems/featured", async (req, res) => {
+    try {
+        const pizzas = await pizzaMenusItems
+            .find({
+                status: "approved",
+                isActive: true,
+            })
+            .sort({ createdAt: -1 })
+            .limit(6)
+            .toArray();
+
+        res.status(200).json({
+            success: true,
+            count: pizzas.length,
+            data: pizzas,
+        });
+    } catch (error) {
+        console.error("Failed to fetch featured menu items:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch featured menu items",
+        });
+    }
+});
 
 
 // Convert MongoDB document to frontend order format
