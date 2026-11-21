@@ -225,8 +225,6 @@ app.patch("/admin/users/:id/unblock", async (req, res) => {
 
 
 
-
-
 app.get("/admin/menu-items", async (req, res) => {
     try {
         const {
@@ -421,11 +419,6 @@ app.delete("/admin/menu-items/:id", async (req, res) => {
 
 
 
-
-
-
-
-// Get all approved and active menu items
 // Get all approved and active menu items
 app.get("/menuItems", async (req, res) => {
     try {
@@ -788,8 +781,6 @@ app.post("/orders", async (req, res) => {
         });
     }
 });
-
-
 
 // Get customer's orders
 app.get("/orders/customer/:email", async (req, res) => {
