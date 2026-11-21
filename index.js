@@ -35,7 +35,8 @@ const pizzaMenusItems = database.collection("menuItems");
 const ordersCollection = database.collection("orders");
 const payments = database.collection("payments");
 const users = database.collection("user");
-
+const adminUsers = database.collection("user");
+const adminMenuItems = database.collection("menuItems");
 
 
 
@@ -53,6 +54,377 @@ export async function connectToMongoDB() {
 
 
 
+app.get("/admin/users", async (req, res) => {
+    try {
+        const { search = "", role = "all" } = req.query;
+
+        const query = {};
+
+        if (String(search).trim()) {
+            const searchRegex = new RegExp(
+                String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                "i"
+            );
+
+            query.$or = [
+                { name: searchRegex },
+                { email: searchRegex },
+            ];
+        }
+
+        if (["admin", "vendor", "customer"].includes(role)) {
+            query.role = role;
+        }
+
+        const users = await adminUsers
+            .find(query)
+            .project({
+                name: 1,
+                email: 1,
+                image: 1, // Profile image
+                role: 1,
+                createdAt: 1,
+                isBlocked: 1,
+                subscriptionPlan: 1,
+            })
+            .sort({ createdAt: -1 })
+            .toArray();
+
+        res.status(200).json({
+            success: true,
+            count: users.length,
+            data: users.map((user) => ({
+                ...user,
+                _id: user._id.toString(),
+                role: user.role || "customer",
+                isBlocked: user.isBlocked || false,
+            })),
+        });
+    } catch (error) {
+        console.error("Fetch users error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch users.",
+        });
+    }
+});
+
+// Block user
+app.patch("/admin/users/:id/block", async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID.",
+            });
+        }
+
+        const user = await adminUsers.findOne({
+            _id: new ObjectId(id),
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found.",
+            });
+        }
+
+        if (user.role === "admin") {
+            return res.status(403).json({
+                success: false,
+                message: "Admin accounts cannot be blocked.",
+            });
+        }
+
+        if (user.isBlocked === true) {
+            return res.status(200).json({
+                success: true,
+                message: "User is already blocked.",
+            });
+        }
+
+        await adminUsers.updateOne(
+            { _id: new ObjectId(id) },
+            {
+                $set: {
+                    isBlocked: true,
+                    updatedAt: new Date(),
+                },
+            }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "User blocked successfully.",
+        });
+    } catch (error) {
+        console.error("Block user error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to block user.",
+        });
+    }
+});
+
+// Unblock user
+app.patch("/admin/users/:id/unblock", async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID.",
+            });
+        }
+
+        const result = await adminUsers.updateOne(
+            {
+                _id: new ObjectId(id),
+                isBlocked: true,
+            },
+            {
+                $set: {
+                    isBlocked: false,
+                    updatedAt: new Date(),
+                },
+            }
+        );
+
+        if (result.matchedCount === 0) {
+            const userExists = await adminUsers.findOne({
+                _id: new ObjectId(id),
+            });
+
+            return res.status(userExists ? 200 : 404).json({
+                success: Boolean(userExists),
+                message: userExists
+                    ? "User is already unblocked."
+                    : "User not found.",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "User unblocked successfully.",
+        });
+    } catch (error) {
+        console.error("Unblock user error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to unblock user.",
+        });
+    }
+});
+
+
+
+
+
+app.get("/admin/menu-items", async (req, res) => {
+    try {
+        const {
+            search = "",
+            category = "all",
+            status = "all",
+        } = req.query;
+
+        const query = {};
+
+        if (String(search).trim()) {
+            const searchRegex = new RegExp(
+                String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                "i"
+            );
+
+            query.$or = [
+                { name: searchRegex },
+                { vendorName: searchRegex },
+                { vendorEmail: searchRegex },
+            ];
+        }
+
+        if (category !== "all") {
+            query.category = String(category);
+        }
+
+        if (status !== "all") {
+            query.status = String(status);
+        }
+
+        const items = await adminMenuItems
+            .find(query)
+            .sort({ createdAt: -1 })
+            .toArray();
+
+        res.status(200).json({
+            success: true,
+            count: items.length,
+            data: items.map((item) => ({
+                ...item,
+                _id: item._id.toString(),
+            })),
+        });
+    } catch (error) {
+        console.error("Admin menu items error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch menu items.",
+        });
+    }
+});
+
+app.patch("/admin/menu-items/:id/review", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (
+            !ObjectId.isValid(id) ||
+            !["approved", "rejected"].includes(status)
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid menu item information.",
+            });
+        }
+
+        const result = await adminMenuItems.updateOne(
+            {
+                _id: new ObjectId(id),
+                status: "pending",
+            },
+            {
+                $set: {
+                    status,
+                    isActive: status === "approved",
+                    reviewedAt: new Date(),
+                },
+            }
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Pending menu item not found.",
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `Menu item ${status} successfully.`,
+        });
+    } catch (error) {
+        console.error("Review menu item error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to review menu item.",
+        });
+    }
+});
+
+
+app.patch("/admin/menu-items/:id/availability", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { isActive } = req.body;
+
+        if (
+            !ObjectId.isValid(id) ||
+            typeof isActive !== "boolean"
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid menu item information.",
+            });
+        }
+
+        const result = await adminMenuItems.updateOne(
+            {
+                _id: new ObjectId(id),
+                status: "approved",
+            },
+            {
+                $set: {
+                    isActive,
+                    updatedAt: new Date(),
+                },
+            }
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Approved menu item not found.",
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `Menu item ${isActive ? "activated" : "deactivated"} successfully.`,
+        });
+    } catch (error) {
+        console.error("Update menu availability error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to update menu item availability.",
+        });
+    }
+});
+
+
+app.delete("/admin/menu-items/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid menu item ID.",
+            });
+        }
+
+        const result = await adminMenuItems.deleteOne({
+            _id: new ObjectId(id),
+        });
+
+        if (result.deletedCount === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Menu item not found.",
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Menu item deleted successfully.",
+        });
+    } catch (error) {
+        console.error("Delete menu item error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to delete menu item.",
+        });
+    }
+});
+
+
+
+
+
+
+
+
 // Get all approved and active menu items
 app.get("/menuItems", async (req, res) => {
     try {
@@ -63,12 +435,13 @@ app.get("/menuItems", async (req, res) => {
             isActive: true,
         };
 
-        if (search && String(search).trim()) {
-            query.name = {
-                $regex: String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-                $options: "i",
-            };
-        }
+
+        const searchRegex = new RegExp(
+            String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+            "i"
+        );
+
+        query.name = searchRegex;
 
         if (category && category !== "All Categories") {
             query.category = String(category);
@@ -838,8 +1211,7 @@ app.delete("/menuItems/:id", async (req, res) => {
 });
 
 
-// manage availability 
-
+// manage availability
 app.patch("/menuItems/:id/availability", async (req, res) => {
     try {
         const { vendorEmail, isActive } = req.body;
@@ -917,7 +1289,7 @@ app.get("/vendor-dashboard/:email", async (req, res) => {
             .trim()
             .toLowerCase();
 
-        const usersCollection = database.collection("users");
+        const usersCollection = database.collection("user");
 
         const [menuItems, orders, vendor] = await Promise.all([
             pizzaMenusItems.find({ vendorEmail }).toArray(),
