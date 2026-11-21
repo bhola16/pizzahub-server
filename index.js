@@ -426,6 +426,7 @@ app.delete("/admin/menu-items/:id", async (req, res) => {
 
 
 // Get all approved and active menu items
+// Get all approved and active menu items
 app.get("/menuItems", async (req, res) => {
     try {
         const { search, category, location } = req.query;
@@ -435,18 +436,24 @@ app.get("/menuItems", async (req, res) => {
             isActive: true,
         };
 
+        // Search by menu item name
+        if (search && String(search).trim()) {
+            const searchRegex = new RegExp(
+                String(search)
+                    .trim()
+                    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                "i"
+            );
 
-        const searchRegex = new RegExp(
-            String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-            "i"
-        );
+            query.name = searchRegex;
+        }
 
-        query.name = searchRegex;
-
+        // Filter by category
         if (category && category !== "All Categories") {
             query.category = String(category);
         }
 
+        // Filter by location
         if (location && location !== "All Locations") {
             query.location = String(location);
         }
