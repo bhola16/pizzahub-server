@@ -1,23 +1,21 @@
 
 import { MongoClient } from "mongodb";
 
-if (!process.env.MONGODB_URI) {
-    throw new Error("MONGODB_URI is missing from environment variables");
+if (!process.env.MONGODB_URL) {
+    throw new Error("MONGODB_URL is missing from environment variables");
 }
 
-const client = new MongoClient(process.env.MONGODB_URI);
+export const client = new MongoClient(process.env.MONGODB_URL);
 
-let database;
+export const db = client.db("pizzahub");
 
 export async function connectToMongoDB() {
     try {
         await client.connect();
 
-        database = client.db("pizzahub");
-
         console.log("You successfully connected to MongoDB!");
 
-        return database;
+        return db;
     } catch (error) {
         console.error("MongoDB connection failed:", error);
         throw error;
@@ -25,9 +23,5 @@ export async function connectToMongoDB() {
 }
 
 export function getDB() {
-    if (!database) {
-        throw new Error("Database is not connected yet.");
-    }
-
-    return database;
+    return db;
 }

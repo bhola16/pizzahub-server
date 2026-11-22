@@ -1,8 +1,26 @@
-
+import { fromNodeHeaders } from "better-auth/node";
 import { ObjectId } from "mongodb";
-import { getDB } from "../config/db.js";
 
-const totalLimit = Number(process.env.NEXT_PUBLIC_UPGRADE_LIMIT) || 3;
+import { getDB } from "../config/db.js";
+import { auth } from "../lib/auth.js";
+
+const totalLimit =
+    Number(process.env.UPGRADE_LIMIT || process.env.NEXT_PUBLIC_UPGRADE_LIMIT) || 3;
+
+const getAuthenticatedVendor = async (req) => {
+    const session = await auth.api.getSession({
+        headers: fromNodeHeaders(req.headers),
+    });
+
+    if (!session?.user?.email) {
+        return null;
+    }
+
+    return getDB().collection("user").findOne({
+        email: session.user.email,
+    });
+};
+
 
 // Get all approved and active menu items
 export const getMenuItems = async (req, res) => {
@@ -80,9 +98,19 @@ export const getFeaturedMenuItems = async (req, res) => {
     }
 };
 
+
 // Add menu item
 export const addMenuItem = async (req, res) => {
     try {
+        const vendor = await getAuthenticatedVendor(req);
+
+        if (!vendor) {
+            return res.status(401).json({
+                success: false,
+                message: "Please log in to add a menu item.",
+            });
+        }
+
         const {
             name,
             category,
@@ -90,39 +118,50 @@ export const addMenuItem = async (req, res) => {
             price,
             location,
             images,
-            vendorName,
-            vendorEmail,
-            plan,
         } = req.body;
 
         if (
-            !name?.trim() ||
-            !category ||
-            !description?.trim() ||
-            !price ||
+            typeof name !== "string" ||
+            !name.trim() ||
+            typeof category !== "string" ||
+            !category.trim() ||
+            typeof description !== "string" ||
+            !description.trim() ||
+            price === undefined ||
+            price === null ||
+            price === "" ||
+            !Number.isFinite(Number(price)) ||
             Number(price) <= 0 ||
-            !location?.trim() ||
+            typeof location !== "string" ||
+            !location.trim() ||
             !Array.isArray(images) ||
             images.length === 0 ||
-            !vendorName?.trim() ||
-            !vendorEmail?.trim()
+            !images.every(
+                (image) => typeof image === "string" && image.trim()
+            )
         ) {
             return res.status(400).json({
                 success: false,
-                message: "All fields are required.",
+                message: "Please provide valid information for all fields.",
             });
         }
+
+        const vendorEmail = vendor.email;
+        const vendorName = vendor.name || "Vendor";
+
+        // Check the actual subscription stored in MongoDB.
+        const isPremium =
+            vendor.subscriptionPlan === "premium" &&
+            ["active", "trialing"].includes(vendor.subscriptionStatus);
 
         const menuItems = getDB().collection("menuItems");
 
         const totalItems = await menuItems.countDocuments({
-            vendorEmail: vendorEmail,
+            vendorEmail,
         });
 
-        if (
-            String(plan || "free").toLowerCase() === "free" &&
-            totalItems >= totalLimit
-        ) {
+        // Enforce the Free plan limit on the backend.
+        if (!isPremium && totalItems >= totalLimit) {
             return res.status(403).json({
                 success: false,
                 upgradeRequired: true,
@@ -132,13 +171,13 @@ export const addMenuItem = async (req, res) => {
 
         const newMenuItem = {
             name: name.trim(),
-            category,
+            category: category.trim(),
             description: description.trim(),
             price: Number(price),
             location: location.trim(),
-            images,
-            vendorName: vendorName.trim(),
-            vendorEmail: vendorEmail.trim(),
+            images: images.map((image) => image.trim()),
+            vendorName,
+            vendorEmail,
             status: "pending",
             isActive: false,
             createdAt: new Date(),
@@ -146,7 +185,7 @@ export const addMenuItem = async (req, res) => {
 
         const result = await menuItems.insertOne(newMenuItem);
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
             message: "Menu item submitted for admin approval.",
             data: {
@@ -157,29 +196,53 @@ export const addMenuItem = async (req, res) => {
     } catch (error) {
         console.error("Failed to add menu item:", error);
 
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Failed to add menu item.",
         });
     }
 };
 
-// Get vendor menu item count
+// Get authenticated vendor's menu item count
 export const getVendorMenuItemCount = async (req, res) => {
     try {
+        const vendor = await getAuthenticatedVendor(req);
+
+        if (!vendor) {
+            return res.status(401).json({
+                success: false,
+                message: "Please log in.",
+            });
+        }
+
+        // Prevent a user from requesting another vendor's count.
+        if (
+            req.params.email &&
+            req.params.email.toLowerCase() !== vendor.email.toLowerCase()
+        ) {
+            return res.status(403).json({
+                message: "You are not authorized to access this information.",
+            });
+        }
+
         const totalItems = await getDB()
             .collection("menuItems")
             .countDocuments({
-                vendorEmail: req.params.email,
+                vendorEmail: vendor.email,
             });
 
-        res.status(200).json({ totalItems });
+        return res.status(200).json({ totalItems });
     } catch (error) {
-        res.status(500).json({
+        console.error("Failed to fetch menu item count:", error);
+
+        return res.status(500).json({
             message: "Failed to fetch menu item count.",
         });
     }
 };
+
+
+
 
 // Get vendor's menu items
 export const getVendorMenuItems = async (req, res) => {

@@ -25,11 +25,11 @@ app.use(express.json());
 
 
 // MongoDB
-if (!process.env.MONGODB_URI) {
-    throw new Error("MONGODB_URI is missing from environment variables");
+if (!process.env.MONGODB_URL) {
+    throw new Error("MONGODB_URL is missing from environment variables");
 }
 
-const client = new MongoClient(process.env.MONGODB_URI);
+const client = new MongoClient(process.env.MONGODB_URL);
 const database = client.db("pizzahub");
 const pizzaMenusItems = database.collection("menuItems");
 const ordersCollection = database.collection("orders");

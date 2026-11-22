@@ -18,12 +18,12 @@ const vendorRouter = express.Router();
 // Menu routes
 router.get("/", getMenuItems);
 router.get("/featured", getFeaturedMenuItems);
-router.post("/", addMenuItem);
-router.get("/count/:email", getVendorMenuItemCount);
 router.put("/:id", updateMenuItem);
 router.delete("/:id", deleteVendorMenuItem);
 router.patch("/:id/availability", updateVendorMenuAvailability);
 router.get("/:id", getSingleMenuItem);
+router.post("/", addMenuItem);
+router.get("/count/:email", getVendorMenuItemCount);
 
 // Vendor menu routes
 vendorRouter.get("/:email", getVendorMenuItems);
