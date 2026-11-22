@@ -1,27 +1,48 @@
 
 import { MongoClient } from "mongodb";
 
-if (!process.env.MONGODB_URL) {
-    throw new Error("MONGODB_URL is missing from environment variables");
-}
+let client;
+let db;
+let connectionPromise;
 
-export const client = new MongoClient(process.env.MONGODB_URL);
+function initializeDatabase() {
+    const uri = process.env.MONGODB_URL;
 
-export const db = client.db("pizzahub");
+    if (!uri) {
+        throw new Error("MONGODB_URL is missing from environment variables");
+    }
 
-export async function connectToMongoDB() {
-    try {
-        await client.connect();
-
-        console.log("You successfully connected to MongoDB!");
-
-        return db;
-    } catch (error) {
-        console.error("MongoDB connection failed:", error);
-        throw error;
+    if (!client) {
+        client = new MongoClient(uri);
+        db = client.db("pizzahub");
     }
 }
 
+export { client, db };
+
+export async function connectToMongoDB() {
+    initializeDatabase();
+
+    if (!connectionPromise) {
+        connectionPromise = client.connect()
+            .then(() => {
+                console.log("Successfully connected to MongoDB!");
+                return db;
+            })
+            .catch((error) => {
+                connectionPromise = null;
+                console.error("MongoDB connection failed:", error);
+                throw error;
+            });
+    }
+
+    return connectionPromise;
+}
+
 export function getDB() {
+    if (!db) {
+        initializeDatabase();
+    }
+
     return db;
 }

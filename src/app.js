@@ -13,10 +13,10 @@ import {
 
 import paymentRoutes from "./routes/payment.routes.js";
 import { stripeWebhook } from "./controllers/payment.controller.js";
+import { connectToMongoDB } from "./config/db.js";
 
 const app = express();
 
-// CORS
 app.use(
     cors({
         origin: process.env.CLIENT_URL || "http://localhost:3000",
@@ -24,16 +24,30 @@ app.use(
     })
 );
 
-// Stripe webhook — MUST be before express.json()
+// Connect to MongoDB before handling requests.
+// This middleware does not consume the request body.
+app.use(async (req, res, next) => {
+    try {
+        await connectToMongoDB();
+        next();
+    } catch (error) {
+        console.error("MongoDB connection error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Database connection failed.",
+        });
+    }
+});
+
+// Stripe webhook MUST be before express.json()
 app.post(
     "/api/payments/webhook",
     express.raw({ type: "application/json" }),
     stripeWebhook
 );
 
-// Parse JSON for normal API requests
 app.use(express.json());
-
 
 // Payment routes
 app.use("/api/payments", paymentRoutes);
