@@ -417,101 +417,101 @@ app.delete("/admin/menu-items/:id", async (req, res) => {
 });
 
 app.get("/admin/transactions", async (req, res) => {
-  try {
-    const {
-      search = "",
-      plan = "all",
-      paymentStatus = "all",
-    } = req.query;
+    try {
+        const {
+            search = "",
+            plan = "all",
+            paymentStatus = "all",
+        } = req.query;
 
-    const matchStage = {};
+        const matchStage = {};
 
-    if (plan !== "all") {
-      matchStage.plan = plan;
-    }
+        if (plan !== "all") {
+            matchStage.plan = plan;
+        }
 
-    if (paymentStatus !== "all") {
-      matchStage.payment_status = paymentStatus;
-    }
+        if (paymentStatus !== "all") {
+            matchStage.payment_status = paymentStatus;
+        }
 
-    if (String(search).trim()) {
-      const searchRegex = new RegExp(
-        String(search)
-          .trim()
-          .replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-        "i"
-      );
+        if (String(search).trim()) {
+            const searchRegex = new RegExp(
+                String(search)
+                    .trim()
+                    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                "i"
+            );
 
-      matchStage.$or = [
-        { customer_email: searchRegex },
-        { payment_intent: searchRegex },
-        { sessionId: searchRegex },
-      ];
-    }
+            matchStage.$or = [
+                { customer_email: searchRegex },
+                { payment_intent: searchRegex },
+                { sessionId: searchRegex },
+            ];
+        }
 
-    const transactions = await payments.aggregate([
-      { $match: matchStage },
-      {
-        $addFields: {
-          userObjectId: {
-            $convert: {
-              input: "$userId",
-              to: "objectId",
-              onError: null,
-              onNull: null,
+        const transactions = await payments.aggregate([
+            { $match: matchStage },
+            {
+                $addFields: {
+                    userObjectId: {
+                        $convert: {
+                            input: "$userId",
+                            to: "objectId",
+                            onError: null,
+                            onNull: null,
+                        },
+                    },
+                },
             },
-          },
-        },
-      },
-      {
-        $lookup: {
-          from: "user",
-          localField: "userObjectId",
-          foreignField: "_id",
-          as: "userInfo",
-        },
-      },
-      {
-        $unwind: {
-          path: "$userInfo",
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
-        $project: {
-          sessionId: 1,
-          userId: 1,
-          vendorName: "$userInfo.name",
-          customer_email: 1,
-          plan: 1,
-          amount: 1,
-          currency: 1,
-          status: 1,
-          payment_status: 1,
-          payment_intent: 1,
-          payment_date: 1,
-        },
-      },
-      { $sort: { payment_date: -1 } },
-    ]).toArray();
+            {
+                $lookup: {
+                    from: "user",
+                    localField: "userObjectId",
+                    foreignField: "_id",
+                    as: "userInfo",
+                },
+            },
+            {
+                $unwind: {
+                    path: "$userInfo",
+                    preserveNullAndEmptyArrays: true,
+                },
+            },
+            {
+                $project: {
+                    sessionId: 1,
+                    userId: 1,
+                    vendorName: "$userInfo.name",
+                    customer_email: 1,
+                    plan: 1,
+                    amount: 1,
+                    currency: 1,
+                    status: 1,
+                    payment_status: 1,
+                    payment_intent: 1,
+                    payment_date: 1,
+                },
+            },
+            { $sort: { payment_date: -1 } },
+        ]).toArray();
 
-    res.status(200).json({
-      success: true,
-      count: transactions.length,
-      data: transactions.map((transaction) => ({
-        ...transaction,
-        _id: transaction._id.toString(),
-        vendorName: transaction.vendorName || "Unknown Vendor",
-      })),
-    });
-  } catch (error) {
-    console.error("Fetch transactions error:", error);
+        res.status(200).json({
+            success: true,
+            count: transactions.length,
+            data: transactions.map((transaction) => ({
+                ...transaction,
+                _id: transaction._id.toString(),
+                vendorName: transaction.vendorName || "Unknown Vendor",
+            })),
+        });
+    } catch (error) {
+        console.error("Fetch transactions error:", error);
 
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch transactions.",
-    });
-  }
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch transactions.",
+        });
+    }
 });
 
 app.get("/admin/dashboard/stats", async (req, res) => {
