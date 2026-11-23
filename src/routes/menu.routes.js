@@ -12,6 +12,7 @@ import {
     getSingleMenuItem,
 } from "../controllers/menu.controller.js";
 import { verifyToken } from "../middleware/verifyAPI.js";
+import { verifyVendor } from "../middleware/verifyVendor.js";
 
 const router = express.Router();
 const vendorRouter = express.Router();
@@ -21,15 +22,15 @@ router.get("/", getMenuItems);
 router.get("/featured", getFeaturedMenuItems);
 router.get("/:id", verifyToken, getSingleMenuItem);
 
-router.put("/:id", verifyToken, updateMenuItem);
-router.delete("/:id", verifyToken, deleteVendorMenuItem);
-router.patch("/:id/availability", updateVendorMenuAvailability);
+router.put("/:id", verifyToken, verifyVendor, updateMenuItem);
+router.delete("/:id", verifyToken, verifyVendor, deleteVendorMenuItem);
+router.patch("/:id/availability", verifyToken, verifyVendor, updateVendorMenuAvailability);
 
-router.post("/",verifyToken , addMenuItem);
-router.get("/count/:email", getVendorMenuItemCount);
+router.post("/",verifyToken , verifyVendor, addMenuItem);
+router.get("/count/:email",  verifyVendor, verifyVendor, getVendorMenuItemCount);
 
 // Vendor menu routes
-vendorRouter.get("/:email", verifyToken, getVendorMenuItems);
+vendorRouter.get("/:email", verifyToken, verifyVendor, getVendorMenuItems);
 
 export { vendorRouter };
 export default router;

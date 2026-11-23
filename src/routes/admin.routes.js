@@ -13,25 +13,27 @@ import {
     updateMenuAvailability,
 } from "../controllers/admin.controller.js";
 import { verifyToken } from "../middleware/verifyAPI.js";
+import { verifyAdmin } from "../middleware/verifyAdmin.js";
 
 const router = express.Router();
 
 // User management
-router.get("/users", verifyToken, getAllUsers);
-router.patch("/users/:id/block", verifyToken, blockUser);
-router.patch("/users/:id/unblock", verifyToken, unblockUser);
+router.get("/users", verifyToken, verifyAdmin, getAllUsers);
+router.patch("/users/:id/block", verifyToken, verifyAdmin, blockUser);
+router.patch("/users/:id/unblock", verifyToken, verifyAdmin, unblockUser);
 
 // Menu management
-router.get("/menu-items", verifyToken, getAllMenuItems);
-router.patch("/menu-items/:id/review", verifyToken, reviewMenuItem);
-router.patch("/menu-items/:id/availability", verifyToken, updateMenuAvailability);
-router.delete("/menu-items/:id", verifyToken, deleteMenuItem);
+router.get("/menu-items", verifyToken, verifyAdmin,  getAllMenuItems);
+router.patch("/menu-items/:id/review", verifyToken, verifyAdmin, reviewMenuItem);
+router.patch("/menu-items/:id/availability", verifyToken, verifyAdmin, updateMenuAvailability);
+router.delete("/menu-items/:id", verifyToken, verifyAdmin, deleteMenuItem);
+
 
 // Dashboard
-router.get("/dashboard/stats", verifyToken, getAdminDashboardStats);
+router.get("/dashboard/stats", verifyToken, verifyAdmin, getAdminDashboardStats);
 
 // Payment transactions
-router.get("/transactions", verifyToken, getAdminTransactions);
+router.get("/transactions", verifyToken, verifyAdmin, getAdminTransactions);
 
 export default router;
 
