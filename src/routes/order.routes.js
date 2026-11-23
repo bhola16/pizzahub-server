@@ -25,10 +25,9 @@ router.delete("/:id/rejected", verifyToken, verifyCustomer, deleteRejectedOrder)
 router.get("/customer/:email", verifyToken, verifyCustomer, getCustomerOrders);
 
 
+
 router.get("/vendor/:email", verifyToken, verifyVendor, getVendorOrders);
 router.patch("/:id/vendor-status", verifyToken, verifyVendor, updateVendorOrderStatus);
-
-
 
 
 export default router;

@@ -10,7 +10,7 @@ Built with **Node.js, Express.js, MongoDB, Better Auth, JWT verification, and St
 
 ## 🚀 Live Application
 
-🔗 **Client-side Website:** [Visit PizzaHub](https://pizzahub-client.vercel.app/)
+🔗 **Client-side Website:** [Visit PizzaHub](https://pizzshub-client.vercel.app/)
 
 ## 📂 GitHub Repositories
 
@@ -41,12 +41,12 @@ PizzaHub uses MongoDB to store and manage application data.
 
 The application uses the following main collections:
 
-| Collection | Purpose |
-|---|---|
-| `user` | Stores user accounts and role information |
-| `menuItems` | Stores restaurant menu items |
-| `orders` | Stores customer food orders |
-| `payments` | Stores payment transaction information |
+| Collection  | Purpose                                   |
+| ----------- | ----------------------------------------- |
+| `user`      | Stores user accounts and role information |
+| `menuItems` | Stores restaurant menu items              |
+| `orders`    | Stores customer food orders               |
+| `payments`  | Stores payment transaction information    |
 
 MongoDB is connected using the official MongoDB Node.js driver.
 
@@ -208,9 +208,9 @@ Available endpoints:
 
 **Premium Subscription:**
 
-| Plan | Price |
-|---|---|
-| Free | $0 |
+| Plan    | Price     |
+| ------- | --------- |
+| Free    | $0        |
 | Premium | $20/month |
 
 ### 11. 🔔 Stripe Webhook Integration
@@ -258,12 +258,12 @@ The middleware:
 
 PizzaHub implements separate authorization middleware for different user roles.
 
-| Middleware | Responsibility |
-|---|---|
-| `verifyAdmin` | Restricts access to administrators |
-| `verifyVendor` | Restricts access to vendors |
-| `verifyCustomer` | Restricts access to customers |
-| `verifyToken` | Verifies JWT authentication |
+| Middleware       | Responsibility                     |
+| ---------------- | ---------------------------------- |
+| `verifyAdmin`    | Restricts access to administrators |
+| `verifyVendor`   | Restricts access to vendors        |
+| `verifyCustomer` | Restricts access to customers      |
+| `verifyToken`    | Verifies JWT authentication        |
 
 The role verification middleware retrieves the authenticated user from MongoDB and checks their assigned role.
 
@@ -298,19 +298,19 @@ Deployment configuration should support:
 
 ## 🛠️ Technologies Used
 
-| Technology | Purpose |
-|---|---|
-| Node.js | JavaScript runtime |
-| Express.js 5 | Backend web framework |
-| MongoDB | NoSQL database |
-| MongoDB Node.js Driver | Database operations |
-| Better Auth | Authentication and session management |
-| jose | JWT verification |
-| JSON Web Token | Token-based authentication |
-| Stripe | Subscription and payment processing |
-| CORS | Cross-origin resource sharing |
-| dotenv | Environment variable management |
-| Vercel | Backend deployment |
+| Technology             | Purpose                               |
+| ---------------------- | ------------------------------------- |
+| Node.js                | JavaScript runtime                    |
+| Express.js 5           | Backend web framework                 |
+| MongoDB                | NoSQL database                        |
+| MongoDB Node.js Driver | Database operations                   |
+| Better Auth            | Authentication and session management |
+| jose                   | JWT verification                      |
+| JSON Web Token         | Token-based authentication            |
+| Stripe                 | Subscription and payment processing   |
+| CORS                   | Cross-origin resource sharing         |
+| dotenv                 | Environment variable management       |
+| Vercel                 | Backend deployment                    |
 
 ---
 
@@ -318,41 +318,41 @@ Deployment configuration should support:
 
 The following table summarizes the backend routes.
 
-| Method | Endpoint | Authentication |
-|---|---|---|
-| GET | `/` | Public |
-| GET | `/menuItems` | Public |
-| GET | `/menuItems/featured` | Public |
-| GET | `/menuItems/:id` | JWT |
-| POST | `/menuItems` | Vendor |
-| PUT | `/menuItems/:id` | Vendor |
-| DELETE | `/menuItems/:id` | Vendor |
-| PATCH | `/menuItems/:id/availability` | Vendor |
-| GET | `/menuItems/count/:email` | Vendor |
-| GET | `/vendor-menu-items/:email` | Vendor |
-| GET | `/admin/users` | Admin |
-| PATCH | `/admin/users/:id/block` | Admin |
-| PATCH | `/admin/users/:id/unblock` | Admin |
-| GET | `/admin/menu-items` | Admin |
-| PATCH | `/admin/menu-items/:id/review` | Admin |
-| PATCH | `/admin/menu-items/:id/availability` | Admin |
-| DELETE | `/admin/menu-items/:id` | Admin |
-| GET | `/admin/dashboard/stats` | Admin |
-| GET | `/admin/transactions` | Admin |
-| POST | `/orders` | Customer |
-| GET | `/orders/check` | JWT |
-| GET | `/orders/customer/:email` | Customer |
-| PATCH | `/orders/:id/withdraw` | Customer |
-| DELETE | `/orders/:id/rejected` | Customer |
-| GET | `/orders/vendor/:email` | Vendor |
-| PATCH | `/orders/:id/vendor-status` | Vendor |
-| GET | `/vendor-dashboard/:email` | Vendor |
-| GET | `/customer-dashboard/:email` | Customer |
-| POST | `/customer-dashboard` | Customer |
-| POST | `/api/payments/create-checkout-session` | Better Auth session |
-| GET | `/api/payments/subscription` | Better Auth session |
-| POST | `/api/payments/cancel-subscription` | Better Auth session |
-| POST | `/api/payments/webhook` | Stripe signature |
+| Method | Endpoint                                | Authentication      |
+| ------ | --------------------------------------- | ------------------- |
+| GET    | `/`                                     | Public              |
+| GET    | `/menuItems`                            | Public              |
+| GET    | `/menuItems/featured`                   | Public              |
+| GET    | `/menuItems/:id`                        | JWT                 |
+| POST   | `/menuItems`                            | Vendor              |
+| PUT    | `/menuItems/:id`                        | Vendor              |
+| DELETE | `/menuItems/:id`                        | Vendor              |
+| PATCH  | `/menuItems/:id/availability`           | Vendor              |
+| GET    | `/menuItems/count/:email`               | Vendor              |
+| GET    | `/vendor-menu-items/:email`             | Vendor              |
+| GET    | `/admin/users`                          | Admin               |
+| PATCH  | `/admin/users/:id/block`                | Admin               |
+| PATCH  | `/admin/users/:id/unblock`              | Admin               |
+| GET    | `/admin/menu-items`                     | Admin               |
+| PATCH  | `/admin/menu-items/:id/review`          | Admin               |
+| PATCH  | `/admin/menu-items/:id/availability`    | Admin               |
+| DELETE | `/admin/menu-items/:id`                 | Admin               |
+| GET    | `/admin/dashboard/stats`                | Admin               |
+| GET    | `/admin/transactions`                   | Admin               |
+| POST   | `/orders`                               | Customer            |
+| GET    | `/orders/check`                         | JWT                 |
+| GET    | `/orders/customer/:email`               | Customer            |
+| PATCH  | `/orders/:id/withdraw`                  | Customer            |
+| DELETE | `/orders/:id/rejected`                  | Customer            |
+| GET    | `/orders/vendor/:email`                 | Vendor              |
+| PATCH  | `/orders/:id/vendor-status`             | Vendor              |
+| GET    | `/vendor-dashboard/:email`              | Vendor              |
+| GET    | `/customer-dashboard/:email`            | Customer            |
+| POST   | `/customer-dashboard`                   | Customer            |
+| POST   | `/api/payments/create-checkout-session` | Better Auth session |
+| GET    | `/api/payments/subscription`            | Better Auth session |
+| POST   | `/api/payments/cancel-subscription`     | Better Auth session |
+| POST   | `/api/payments/webhook`                 | Stripe signature    |
 
 **Authentication:** Protected endpoints require valid authentication and the appropriate user role where applicable.
 
@@ -818,7 +818,7 @@ If you want to contribute:
 - **GitHub:** [@bhola16](https://github.com/bhola16)
 - **Client Repository:** [PizzaHub Client](https://github.com/bhola16/pizzahub-client)
 - **Server Repository:** [PizzaHub Server](https://github.com/bhola16/pizzahub-server)
-- **Live Website:** [PizzaHub](https://pizzahub-client.vercel.app/)
+- **Live Website:** [PizzaHub](https://pizzshub-client.vercel.app/)
 
 Electronics & Communication Engineering Graduate  
 Khulna University, Bangladesh

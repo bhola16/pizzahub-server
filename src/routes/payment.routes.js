@@ -1,27 +1,30 @@
 import express from "express";
 
 import {
+    cancelSubscription,
     createCheckoutSession,
     getSubscription,
-    cancelSubscription,
 } from "../controllers/payment.controller.js";
+import { verifyVendor } from "../middleware/verifyVendor.js";
+import { verifyToken } from "../middleware/verifyAPI.js";
 
 
 const router = express.Router();
 
 router.post(
-    "/create-checkout-session",
+    "/create-checkout-session", verifyToken, verifyVendor,
     createCheckoutSession,
 );
 
 
 router.get(
-    "/subscription",
+    "/subscription", verifyToken, verifyVendor,
     getSubscription,
 );
 
+
 router.post(
-    "/cancel-subscription",
+    "/cancel-subscription", verifyToken, verifyVendor,
     cancelSubscription,
 );
 

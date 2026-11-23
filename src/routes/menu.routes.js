@@ -27,7 +27,7 @@ router.delete("/:id", verifyToken, verifyVendor, deleteVendorMenuItem);
 router.patch("/:id/availability", verifyToken, verifyVendor, updateVendorMenuAvailability);
 
 router.post("/",verifyToken , verifyVendor, addMenuItem);
-router.get("/count/:email",  verifyVendor, verifyVendor, getVendorMenuItemCount);
+router.get("/count/:email",  verifyToken, verifyVendor, getVendorMenuItemCount);
 
 // Vendor menu routes
 vendorRouter.get("/:email", verifyToken, verifyVendor, getVendorMenuItems);

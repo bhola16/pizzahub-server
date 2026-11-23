@@ -6,9 +6,6 @@ import { getDB } from "../config/db.js";
 const escapeRegex = (value) =>
     String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// ==========================================
-// GET ALL USERS
-// ==========================================
 
 export const getAllUsers = async (req, res) => {
     try {
@@ -66,10 +63,6 @@ export const getAllUsers = async (req, res) => {
         });
     }
 };
-
-// ==========================================
-// BLOCK USER
-// ==========================================
 
 export const blockUser = async (req, res) => {
     try {
@@ -133,9 +126,6 @@ export const blockUser = async (req, res) => {
     }
 };
 
-// ==========================================
-// UNBLOCK USER
-// ==========================================
 
 export const unblockUser = async (req, res) => {
     try {
@@ -190,9 +180,6 @@ export const unblockUser = async (req, res) => {
     }
 };
 
-// ==========================================
-// GET ALL MENU ITEMS
-// ==========================================
 
 export const getAllMenuItems = async (req, res) => {
     try {
@@ -249,9 +236,6 @@ export const getAllMenuItems = async (req, res) => {
     }
 };
 
-// ==========================================
-// APPROVE OR REJECT MENU ITEM
-// ==========================================
 
 export const reviewMenuItem = async (req, res) => {
     try {
@@ -306,9 +290,6 @@ export const reviewMenuItem = async (req, res) => {
     }
 };
 
-// ==========================================
-// UPDATE MENU ITEM AVAILABILITY
-// ==========================================
 
 export const updateMenuAvailability = async (req, res) => {
     try {
@@ -362,9 +343,6 @@ export const updateMenuAvailability = async (req, res) => {
     }
 };
 
-// ==========================================
-// DELETE MENU ITEM
-// ==========================================
 
 export const deleteMenuItem = async (req, res) => {
     try {
@@ -404,14 +382,11 @@ export const deleteMenuItem = async (req, res) => {
     }
 };
 
-// ==========================================
-// ADMIN DASHBOARD STATISTICS
-// ==========================================
-
 export const getAdminDashboardStats = async (req, res) => {
     try {
         const users = getDB().collection("user");
         const menuItems = getDB().collection("menuItems");
+        const transactions = getDB().collection("payments");
 
         const [
             totalUsers,
@@ -419,6 +394,7 @@ export const getAdminDashboardStats = async (req, res) => {
             totalCustomers,
             totalMenuItems,
             pendingMenuItems,
+            totalTransactions,
         ] = await Promise.all([
             users.countDocuments(),
 
@@ -441,6 +417,8 @@ export const getAdminDashboardStats = async (req, res) => {
             menuItems.countDocuments({
                 status: "pending",
             }),
+
+            transactions.countDocuments(),
         ]);
 
         res.status(200).json({
@@ -451,6 +429,7 @@ export const getAdminDashboardStats = async (req, res) => {
                 totalCustomers,
                 totalMenuItems,
                 pendingMenuItems,
+                totalTransactions,
             },
         });
     } catch (error) {
@@ -462,10 +441,6 @@ export const getAdminDashboardStats = async (req, res) => {
         });
     }
 };
-
-// ==========================================
-// GET ADMIN PAYMENT TRANSACTIONS
-// ==========================================
 
 export const getAdminTransactions = async (req, res) => {
     try {
