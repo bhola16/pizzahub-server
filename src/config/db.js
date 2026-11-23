@@ -1,28 +1,18 @@
 
 import { MongoClient } from "mongodb";
 
-let client;
-let db;
-let connectionPromise;
+const uri = process.env.MONGODB_URL;
 
-function initializeDatabase() {
-    const uri = process.env.MONGODB_URL;
-
-    if (!uri) {
-        throw new Error("MONGODB_URL is missing from environment variables");
-    }
-
-    if (!client) {
-        client = new MongoClient(uri);
-        db = client.db("pizzahub");
-    }
+if (!uri) {
+    throw new Error("MONGODB_URL is missing from environment variables");
 }
 
-export { client, db };
+export const client = new MongoClient(uri);
+export const db = client.db("pizzahub");
+
+let connectionPromise;
 
 export async function connectToMongoDB() {
-    initializeDatabase();
-
     if (!connectionPromise) {
         connectionPromise = client.connect()
             .then(() => {
@@ -40,9 +30,5 @@ export async function connectToMongoDB() {
 }
 
 export function getDB() {
-    if (!db) {
-        initializeDatabase();
-    }
-
     return db;
 }
