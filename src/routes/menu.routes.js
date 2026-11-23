@@ -11,6 +11,7 @@ import {
     updateVendorMenuAvailability,
     getSingleMenuItem,
 } from "../controllers/menu.controller.js";
+import { verifyToken } from "../middleware/verifyAPI.js";
 
 const router = express.Router();
 const vendorRouter = express.Router();
@@ -18,15 +19,17 @@ const vendorRouter = express.Router();
 // Menu routes
 router.get("/", getMenuItems);
 router.get("/featured", getFeaturedMenuItems);
-router.put("/:id", updateMenuItem);
-router.delete("/:id", deleteVendorMenuItem);
+router.get("/:id", verifyToken, getSingleMenuItem);
+
+router.put("/:id", verifyToken, updateMenuItem);
+router.delete("/:id", verifyToken, deleteVendorMenuItem);
 router.patch("/:id/availability", updateVendorMenuAvailability);
-router.get("/:id", getSingleMenuItem);
-router.post("/", addMenuItem);
+
+router.post("/",verifyToken , addMenuItem);
 router.get("/count/:email", getVendorMenuItemCount);
 
 // Vendor menu routes
-vendorRouter.get("/:email", getVendorMenuItems);
+vendorRouter.get("/:email", verifyToken, getVendorMenuItems);
 
 export { vendorRouter };
 export default router;

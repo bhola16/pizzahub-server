@@ -1,19 +1,19 @@
 
-import express from "express";
 import cors from "cors";
+import express from "express";
 
 import adminRoutes from "./routes/admin.routes.js";
 import menuRoutes, { vendorRouter } from "./routes/menu.routes.js";
 import orderRoutes from "./routes/order.routes.js";
 
 import {
-    vendorRouter as vendorDashboardRoutes,
     customerRouter as customerDashboardRoutes,
+    vendorRouter as vendorDashboardRoutes,
 } from "./routes/dashboard.routes.js";
 
-import paymentRoutes from "./routes/payment.routes.js";
-import { stripeWebhook } from "./controllers/payment.controller.js";
 import { connectToMongoDB } from "./config/db.js";
+import { stripeWebhook } from "./controllers/payment.controller.js";
+import paymentRoutes from "./routes/payment.routes.js";
 
 const app = express();
 
@@ -21,6 +21,8 @@ app.use(
     cors({
         origin: process.env.CLIENT_URL,
         credentials: true,
+        allowedHeaders: ["Content-Type", "Authorization"],
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     })
 );
 
