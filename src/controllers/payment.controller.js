@@ -3,10 +3,7 @@ import { fromNodeHeaders } from "better-auth/node";
 import { getDB } from "../config/db.js";
 import stripe from "../config/stripe.js";
 import { auth } from "../lib/auth.js";
-
-// ------------------------------------------
-// Helper: Get authenticated vendor
-// ------------------------------------------
+import { ObjectId } from "mongodb";
 
 const getAuthenticatedVendor = async (req) => {
     const session = await auth.api.getSession({
@@ -27,17 +24,11 @@ const getAuthenticatedVendor = async (req) => {
     return vendor || null;
 };
 
-// ------------------------------------------
-// Helper: Check subscription status
-// ------------------------------------------
 
 const isSubscriptionActive = (status) => {
     return ["active", "trialing"].includes(status);
 };
 
-// ------------------------------------------
-// 1. Create Stripe Checkout Session
-// ------------------------------------------
 
 export const createCheckoutSession = async (req, res) => {
     try {
@@ -50,11 +41,12 @@ export const createCheckoutSession = async (req, res) => {
         }
 
         if (
-            vendor.subscriptionPlan === "premium" &&
             vendor.premium === true &&
-            isSubscriptionActive(vendor.subscriptionStatus)
+            vendor.subscriptionPlan === "premium" &&
+            ["active", "trialing"].includes(vendor.subscriptionStatus)
         ) {
             return res.status(400).json({
+                success: false,
                 message: "You already have an active Premium subscription.",
             });
         }
@@ -116,9 +108,6 @@ export const createCheckoutSession = async (req, res) => {
     }
 };
 
-// ------------------------------------------
-// 2. Get Vendor Subscription
-// ------------------------------------------
 
 export const getSubscription = async (req, res) => {
     try {
@@ -139,6 +128,15 @@ export const getSubscription = async (req, res) => {
 
                 subscriptionStatus:
                     vendor.subscriptionStatus || "inactive",
+
+                stripeSubscriptionId:
+                    vendor.stripeSubscriptionId || null,
+
+                cancelAtPeriodEnd:
+                    vendor.cancelAtPeriodEnd === true,
+
+                currentPeriodEnd:
+                    vendor.currentPeriodEnd || null,
             },
         });
 
@@ -151,28 +149,103 @@ export const getSubscription = async (req, res) => {
     }
 };
 
-// ------------------------------------------
-// 3. Stripe Webhook
-// ------------------------------------------
+
+export const cancelSubscription = async (req, res) => {
+    try {
+        const vendor = await getAuthenticatedVendor(req);
+
+        if (!vendor) {
+            return res.status(401).json({
+                success: false,
+                message: "Vendor authentication required.",
+            });
+        }
+
+        if (!vendor.stripeSubscriptionId) {
+            return res.status(400).json({
+                success: false,
+                message: "No active subscription found.",
+            });
+        }
+
+        const subscriptionId = vendor.stripeSubscriptionId;
+
+        const subscription =
+            await stripe.subscriptions.retrieve(subscriptionId);
+
+        // Verify subscription ownership
+        if (
+            subscription.metadata?.vendorId !== String(vendor._id) &&
+            subscription.metadata?.vendorEmail !== vendor.email
+        ) {
+            return res.status(403).json({
+                success: false,
+                message: "Subscription ownership verification failed.",
+            });
+        }
+
+        if (!isSubscriptionActive(subscription.status)) {
+            return res.status(400).json({
+                success: false,
+                message: "Subscription is not active.",
+            });
+        }
+
+        // Cancel immediately
+        await stripe.subscriptions.cancel(subscriptionId);
+
+        const db = getDB();
+
+        await db.collection("user").updateOne(
+            {
+                _id: vendor._id,
+                stripeSubscriptionId: subscriptionId,
+            },
+            {
+                $set: {
+                    premium: false,
+                    subscriptionPlan: "free",
+                    subscriptionStatus: "free",
+                    stripeSubscriptionId: null,
+                    cancelAtPeriodEnd: false,
+                    currentPeriodEnd: null,
+                    updatedAt: new Date(),
+                },
+            }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "Premium subscription cancelled successfully.",
+        });
+
+    } catch (error) {
+        console.error("Cancel subscription error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Unable to cancel subscription.",
+        });
+    }
+};
+
+
+
 
 export const stripeWebhook = async (req, res) => {
     const signature = req.headers["stripe-signature"];
 
     let event;
 
-    // Verify Stripe webhook signature
+    // 1. Verify Stripe webhook signature
     try {
         event = stripe.webhooks.constructEvent(
             req.body,
             signature,
             process.env.STRIPE_WEBHOOK_SECRET
         );
-
     } catch (error) {
-        console.error(
-            "Webhook signature error:",
-            error.message
-        );
+        console.error("Webhook signature error:", error.message);
 
         return res.status(400).send(
             `Webhook Error: ${error.message}`
@@ -180,21 +253,20 @@ export const stripeWebhook = async (req, res) => {
     }
 
     const db = getDB();
+    const usersCollection = db.collection("user");
+    const paymentsCollection = db.collection("payments");
 
     try {
         switch (event.type) {
 
-            // ======================================
-            // CHECKOUT COMPLETED
-            // ======================================
+            // ==========================================
+            // CHECKOUT SESSION COMPLETED
+            // ==========================================
 
             case "checkout.session.completed": {
                 const checkout = event.data.object;
 
-                console.log(
-                    "Checkout completed event received:",
-                    checkout.id
-                );
+                console.log("Checkout completed:", checkout.id);
 
                 const subscriptionId =
                     typeof checkout.subscription === "string"
@@ -202,85 +274,86 @@ export const stripeWebhook = async (req, res) => {
                         : checkout.subscription?.id || null;
 
                 if (!subscriptionId) {
-                    throw new Error(
-                        "Subscription ID missing from Checkout Session."
-                    );
+                    throw new Error("Subscription ID missing.");
                 }
 
-                // Retrieve subscription details from Stripe
                 const subscription =
-                    await stripe.subscriptions.retrieve(
-                        subscriptionId
-                    );
-
-                const vendorEmail =
-                    checkout.metadata?.vendorEmail ||
-                    subscription.metadata?.vendorEmail;
+                    await stripe.subscriptions.retrieve(subscriptionId);
 
                 const vendorId =
                     checkout.metadata?.vendorId ||
                     subscription.metadata?.vendorId;
 
-                if (!vendorEmail) {
-                    throw new Error(
-                        "Vendor email missing from Stripe metadata."
-                    );
+                const vendorEmail =
+                    checkout.metadata?.vendorEmail ||
+                    subscription.metadata?.vendorEmail;
+
+                if (!vendorId || !ObjectId.isValid(vendorId)) {
+                    throw new Error("Valid vendor ID missing from metadata.");
                 }
 
-                const subscriptionStatus = subscription.status;
-
-                const active =
-                    isSubscriptionActive(subscriptionStatus);
+                if (!vendorEmail) {
+                    throw new Error("Vendor email missing from metadata.");
+                }
 
                 const customerId =
                     typeof checkout.customer === "string"
                         ? checkout.customer
                         : checkout.customer?.id || null;
 
-                // Update vendor subscription
-                if (active) {
-                    const userResult =
-                        await db.collection("user").updateOne(
-                            {
-                                email: vendorEmail,
-                                role: "vendor",
-                            },
-                            {
-                                $set: {
-                                    subscriptionPlan: "premium",
-                                    premium: true,
-                                    subscriptionStatus,
-                                    stripeCustomerId: customerId,
-                                    stripeSubscriptionId: subscriptionId,
-                                    updatedAt: new Date(),
-                                },
-                            }
-                        );
+                const active = isSubscriptionActive(subscription.status);
 
-                    console.log(
-                        "Vendor subscription update:",
+                // Activate Premium only for an active subscription.
+                if (active) {
+                    const userResult = await usersCollection.updateOne(
                         {
-                            matchedCount: userResult.matchedCount,
-                            modifiedCount: userResult.modifiedCount,
+                            _id: new ObjectId(vendorId),
+                            email: vendorEmail,
+                            role: "vendor",
+                            $or: [
+                                { stripeSubscriptionId: subscriptionId },
+                                { stripeSubscriptionId: null },
+                                { stripeSubscriptionId: { $exists: false } },
+                            ],
+                        },
+                        {
+                            $set: {
+                                subscriptionPlan: "premium",
+                                premium: true,
+                                subscriptionStatus: subscription.status,
+
+                                stripeCustomerId: customerId,
+                                stripeSubscriptionId: subscriptionId,
+
+                                cancelAtPeriodEnd:
+                                    subscription.cancel_at_period_end === true,
+
+                                currentPeriodEnd:
+                                    subscription.current_period_end
+                                        ? new Date(
+                                            subscription.current_period_end * 1000
+                                        )
+                                        : null,
+
+                                updatedAt: new Date(),
+                            },
                         }
                     );
 
                     if (userResult.matchedCount === 0) {
-                        throw new Error(
-                            `Vendor not found: ${vendorEmail}`
+                        console.warn(
+                            "Checkout activation ignored: vendor not found or another subscription is current.",
+                            { vendorId, vendorEmail, subscriptionId }
                         );
                     }
                 }
 
-                // Convert Stripe cents into dollar amount
-                const amountInDollars =
-                    (checkout.amount_total ?? 0) / 100;
-
+                // Save payment record idempotently.
                 const paymentData = {
-                    vendorId: vendorId || null,
+                    vendorId,
                     vendorEmail,
 
-                    amount: `$${amountInDollars.toFixed(2)}`,
+                    amount: `$${((checkout.amount_total ?? 0) / 100).toFixed(2)}`,
                     currency: (checkout.currency || "usd").toUpperCase(),
 
                     paymentStatus: checkout.payment_status,
@@ -293,171 +366,309 @@ export const stripeWebhook = async (req, res) => {
                             : checkout.payment_intent?.id || null,
 
                     stripeCustomerId: customerId,
-
                     stripeSubscriptionId: subscriptionId,
 
                     createdAt: new Date(),
                 };
 
-                // Idempotent payment creation
-                const paymentResult =
-                    await db.collection("payments").updateOne(
-                        {
-                            stripeSessionId: checkout.id,
-                        },
-                        {
-                            $setOnInsert: paymentData,
-                        },
-                        {
-                            upsert: true,
-                        }
-                    );
-
-                console.log("Payment record result:", {
-                    stripeSessionId: checkout.id,
-                    matchedCount: paymentResult.matchedCount,
-                    modifiedCount: paymentResult.modifiedCount,
-                    upsertedId: paymentResult.upsertedId,
-                    amount: paymentData.amount,
-                    currency: paymentData.currency,
-                    paymentStatus: paymentData.paymentStatus,
-                });
-
-                console.log(
-                    `Checkout processed for ${vendorEmail}`
+                await paymentsCollection.updateOne(
+                    { stripeSessionId: checkout.id },
+                    { $setOnInsert: paymentData },
+                    { upsert: true }
                 );
+
+                console.log("Checkout processed:", {
+                    vendorEmail,
+                    subscriptionId,
+                    active,
+                });
 
                 break;
             }
 
-            // ======================================
+            // ==========================================
             // SUBSCRIPTION UPDATED
-            // ======================================
+            // ==========================================
 
             case "customer.subscription.updated": {
                 const subscription = event.data.object;
 
-                const vendorEmail =
-                    subscription.metadata?.vendorEmail;
+                const vendorId = subscription.metadata?.vendorId;
+                const vendorEmail = subscription.metadata?.vendorEmail;
 
-                if (!vendorEmail) {
-                    throw new Error(
-                        "Vendor email missing from subscription metadata."
-                    );
+                if (!vendorId || !ObjectId.isValid(vendorId) || !vendorEmail) {
+                    throw new Error("Valid vendor metadata missing.");
                 }
 
-                const active =
-                    isSubscriptionActive(subscription.status);
+                const active = isSubscriptionActive(subscription.status);
 
                 const customerId =
                     typeof subscription.customer === "string"
                         ? subscription.customer
                         : subscription.customer?.id || null;
 
-                const userResult =
-                    await db.collection("user").updateOne(
-                        {
-                            email: vendorEmail,
-                            role: "vendor",
-                        },
-                        {
-                            $set: {
-                                subscriptionPlan: active
-                                    ? "premium"
-                                    : "free",
-
-                                premium: active,
-
-                                subscriptionStatus:
-                                    subscription.status,
-
-                                stripeCustomerId: customerId,
-
-                                stripeSubscriptionId:
-                                    subscription.id,
-
-                                updatedAt: new Date(),
-                            },
-                        }
-                    );
-
-                console.log(
-                    `Subscription updated for ${vendorEmail}:`,
+                const userResult = await usersCollection.updateOne(
                     {
-                        status: subscription.status,
-                        premium: active,
-                        matchedCount: userResult.matchedCount,
-                        modifiedCount: userResult.modifiedCount,
+                        _id: new ObjectId(vendorId),
+                        email: vendorEmail,
+                        role: "vendor",
+                        $or: [
+                            { stripeSubscriptionId: subscription.id },
+                            { stripeSubscriptionId: null },
+                            { stripeSubscriptionId: { $exists: false } },
+                        ],
+                    },
+                    {
+                        $set: {
+                            subscriptionPlan: active ? "premium" : "free",
+                            premium: active,
+
+                            subscriptionStatus: active
+                                ? subscription.status
+                                : "free",
+
+                            stripeCustomerId: customerId,
+
+                            stripeSubscriptionId: active
+                                ? subscription.id
+                                : null,
+
+                            cancelAtPeriodEnd: active
+                                ? subscription.cancel_at_period_end === true
+                                : false,
+
+                            currentPeriodEnd:
+                                active && subscription.current_period_end
+                                    ? new Date(
+                                        subscription.current_period_end * 1000
+                                    )
+                                    : null,
+
+                            updatedAt: new Date(),
+                        },
                     }
                 );
 
+                console.log("Subscription updated:", {
+                    vendorEmail,
+                    subscriptionId: subscription.id,
+                    stripeStatus: subscription.status,
+                    premium: active,
+                    matchedCount: userResult.matchedCount,
+                });
+
                 if (userResult.matchedCount === 0) {
-                    throw new Error(
-                        `Vendor not found: ${vendorEmail}`
+                    console.warn(
+                        "Subscription update ignored: subscription is no longer current.",
+                        subscription.id
                     );
                 }
 
                 break;
             }
 
-            // ======================================
-            // SUBSCRIPTION DELETED
-            // ======================================
+            // ==========================================
+            // SUBSCRIPTION DELETED / CANCELLED
+            // ==========================================
 
             case "customer.subscription.deleted": {
                 const subscription = event.data.object;
 
-                const vendorEmail =
-                    subscription.metadata?.vendorEmail;
+                const vendorId = subscription.metadata?.vendorId;
+                const vendorEmail = subscription.metadata?.vendorEmail;
 
-                if (!vendorEmail) {
-                    throw new Error(
-                        "Vendor email missing from deleted subscription metadata."
-                    );
+                if (!vendorId || !ObjectId.isValid(vendorId) || !vendorEmail) {
+                    throw new Error("Valid vendor metadata missing.");
                 }
 
-                const userResult =
-                    await db.collection("user").updateOne(
-                        {
-                            email: vendorEmail,
-                            role: "vendor",
-                        },
-                        {
-                            $set: {
-                                subscriptionPlan: "free",
-                                premium: false,
-                                subscriptionStatus: "canceled",
-                                stripeSubscriptionId: null,
-                                updatedAt: new Date(),
-                            },
-                        }
-                    );
-
-                console.log(
-                    `Subscription canceled for ${vendorEmail}:`,
+                const userResult = await usersCollection.updateOne(
                     {
-                        matchedCount: userResult.matchedCount,
-                        modifiedCount: userResult.modifiedCount,
+                        _id: new ObjectId(vendorId),
+                        email: vendorEmail,
+                        role: "vendor",
+                        stripeSubscriptionId: subscription.id,
+                    },
+                    {
+                        $set: {
+                            subscriptionPlan: "free",
+                            premium: false,
+                            subscriptionStatus: "free",
+
+                            stripeSubscriptionId: null,
+
+                            cancelAtPeriodEnd: false,
+                            currentPeriodEnd: null,
+
+                            updatedAt: new Date(),
+                        },
                     }
                 );
 
+                console.log("Subscription cancelled:", {
+                    vendorEmail,
+                    subscriptionId: subscription.id,
+                    matchedCount: userResult.matchedCount,
+                });
+
                 if (userResult.matchedCount === 0) {
-                    throw new Error(
-                        `Vendor not found: ${vendorEmail}`
+                    console.warn(
+                        "Cancellation ignored: subscription is no longer current or vendor is already on Free.",
+                        subscription.id
                     );
                 }
 
                 break;
             }
 
-            // ======================================
+            // ==========================================
+            // INVOICE PAYMENT SUCCEEDED
+            // ==========================================
+
+            case "invoice.payment_succeeded": {
+                const invoice = event.data.object;
+
+                const subscriptionId =
+                    typeof invoice.subscription === "string"
+                        ? invoice.subscription
+                        : invoice.subscription?.id || null;
+
+                if (!subscriptionId) {
+                    console.log("Invoice has no subscription:", invoice.id);
+                    break;
+                }
+
+                const subscription =
+                    await stripe.subscriptions.retrieve(subscriptionId);
+
+                const vendorId = subscription.metadata?.vendorId;
+                const vendorEmail = subscription.metadata?.vendorEmail;
+
+                if (!vendorId || !ObjectId.isValid(vendorId) || !vendorEmail) {
+                    throw new Error("Valid vendor metadata missing.");
+                }
+
+                const customerId =
+                    typeof invoice.customer === "string"
+                        ? invoice.customer
+                        : invoice.customer?.id || null;
+
+                const active = isSubscriptionActive(subscription.status);
+
+                if (active) {
+                    await usersCollection.updateOne(
+                        {
+                            _id: new ObjectId(vendorId),
+                            email: vendorEmail,
+                            role: "vendor",
+                            stripeSubscriptionId: subscriptionId,
+                        },
+                        {
+                            $set: {
+                                subscriptionPlan: "premium",
+                                premium: true,
+                                subscriptionStatus: subscription.status,
+                                stripeCustomerId: customerId,
+                                currentPeriodEnd:
+                                    subscription.current_period_end
+                                        ? new Date(
+                                            subscription.current_period_end * 1000
+                                        )
+                                        : null,
+                                updatedAt: new Date(),
+                            },
+                        }
+                    );
+                }
+
+                // Save each successful invoice only once.
+                await paymentsCollection.updateOne(
+                    { stripeInvoiceId: invoice.id },
+                    {
+                        $setOnInsert: {
+                            vendorId,
+                            vendorEmail,
+                            amount: `$${((invoice.amount_paid ?? 0) / 100).toFixed(2)}`,
+                            currency: (invoice.currency || "usd").toUpperCase(),
+                            paymentStatus: "paid",
+                            stripeInvoiceId: invoice.id,
+                            stripeCustomerId: customerId,
+                            stripeSubscriptionId: subscriptionId,
+                            createdAt: new Date(),
+                        },
+                    },
+                    { upsert: true }
+                );
+
+                console.log("Invoice payment succeeded:", invoice.id);
+
+                break;
+            }
+
+            // ==========================================
+            // INVOICE PAYMENT FAILED
+            // ==========================================
+
+            case "invoice.payment_failed": {
+                const invoice = event.data.object;
+
+                const subscriptionId =
+                    typeof invoice.subscription === "string"
+                        ? invoice.subscription
+                        : invoice.subscription?.id || null;
+
+                if (!subscriptionId) {
+                    console.log("Failed invoice has no subscription:", invoice.id);
+                    break;
+                }
+
+                const subscription =
+                    await stripe.subscriptions.retrieve(subscriptionId);
+
+                const vendorId = subscription.metadata?.vendorId;
+                const vendorEmail = subscription.metadata?.vendorEmail;
+
+                if (!vendorId || !ObjectId.isValid(vendorId) || !vendorEmail) {
+                    throw new Error("Valid vendor metadata missing.");
+                }
+
+                // Record the failed payment without automatically
+                // removing Premium access.
+                await paymentsCollection.updateOne(
+                    { stripeInvoiceId: invoice.id },
+                    {
+                        $setOnInsert: {
+                            vendorId,
+                            vendorEmail,
+                            amount: `$${((invoice.amount_due ?? 0) / 100).toFixed(2)}`,
+                            currency: (invoice.currency || "usd").toUpperCase(),
+                            paymentStatus: "failed",
+                            stripeInvoiceId: invoice.id,
+                            stripeCustomerId:
+                                typeof invoice.customer === "string"
+                                    ? invoice.customer
+                                    : invoice.customer?.id || null,
+                            stripeSubscriptionId: subscriptionId,
+                            createdAt: new Date(),
+                        },
+                    },
+                    { upsert: true }
+                );
+
+                console.warn("Invoice payment failed:", {
+                    vendorEmail,
+                    subscriptionId,
+                    invoiceId: invoice.id,
+                });
+
+                break;
+            }
+
+            // ==========================================
             // OTHER EVENTS
-            // ======================================
+            // ==========================================
 
             default: {
-                console.log(
-                    `Unhandled Stripe event: ${event.type}`
-                );
+                console.log(`Unhandled Stripe event: ${event.type}`);
             }
         }
 
@@ -473,3 +684,4 @@ export const stripeWebhook = async (req, res) => {
         });
     }
 };
+

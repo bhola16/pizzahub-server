@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { connectToMongoDB } from "./config/db.js";
 
+
 const startServer = async () => {
     try {
         await connectToMongoDB();
