@@ -1,28 +1,9 @@
 
-import { fromNodeHeaders } from "better-auth/node";
+import { ObjectId } from "mongodb";
 import { getDB } from "../config/db.js";
 import stripe from "../config/stripe.js";
-import { auth } from "../lib/auth.js";
-import { ObjectId } from "mongodb";
 
-const getAuthenticatedVendor = async (req) => {
-    const session = await auth.api.getSession({
-        headers: fromNodeHeaders(req.headers),
-    });
 
-    if (!session?.user?.email) {
-        return null;
-    }
-
-    const db = getDB();
-
-    const vendor = await db.collection("user").findOne({
-        email: session.user.email,
-        role: "vendor",
-    });
-
-    return vendor || null;
-};
 
 
 const isSubscriptionActive = (status) => {
@@ -32,7 +13,7 @@ const isSubscriptionActive = (status) => {
 
 export const createCheckoutSession = async (req, res) => {
     try {
-        const vendor = await getAuthenticatedVendor(req);
+        const vendor = req.vendor;
 
         if (!vendor) {
             return res.status(401).json({
@@ -111,7 +92,7 @@ export const createCheckoutSession = async (req, res) => {
 
 export const getSubscription = async (req, res) => {
     try {
-        const vendor = await getAuthenticatedVendor(req);
+        const vendor = req.vendor;
 
         if (!vendor) {
             return res.status(401).json({
@@ -152,7 +133,7 @@ export const getSubscription = async (req, res) => {
 
 export const cancelSubscription = async (req, res) => {
     try {
-        const vendor = await getAuthenticatedVendor(req);
+        const vendor = req.vendor;
 
         if (!vendor) {
             return res.status(401).json({
@@ -228,8 +209,6 @@ export const cancelSubscription = async (req, res) => {
         });
     }
 };
-
-
 
 
 export const stripeWebhook = async (req, res) => {
@@ -684,4 +663,3 @@ export const stripeWebhook = async (req, res) => {
         });
     }
 };
-

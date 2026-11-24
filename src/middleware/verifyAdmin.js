@@ -44,6 +44,7 @@ export const verifyAdmin = async (req, res, next) => {
 
         req.dbUser = admin;
         req.admin = admin;
+        console.log('Admin is varified:// ', admin._id);
 
         next();
     } catch (error) {

@@ -1,6 +1,6 @@
 
-import { getDB } from "../config/db.js";
 import { ObjectId } from "mongodb";
+import { getDB } from "../config/db.js";
 
 export const verifyVendor = async (req, res, next) => {
     try {
@@ -22,11 +22,14 @@ export const verifyVendor = async (req, res, next) => {
             conditions.push({ _id: new ObjectId(userId) });
         }
 
+
         const db = getDB();
+
 
         const vendor = await db.collection("user").findOne({
             $or: conditions,
         });
+
 
         if (!vendor) {
             return res.status(401).json({

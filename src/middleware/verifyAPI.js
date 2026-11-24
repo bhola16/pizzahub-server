@@ -1,15 +1,15 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
-const CLIENT_URL = process.env.CLIENT_URL;
+const AUTH_URL = process.env.CLIENT_URL;
 
 const JWKS = createRemoteJWKSet(
-    new URL(`${CLIENT_URL}/api/auth/jwks`)
+    new URL(`${AUTH_URL}/api/auth/jwks`)
 );
 
 export const verifyToken = async (req, res, next) => {
     const authHeader = req.headers.authorization;
 
-
+    console.log(authHeader)
 
     if (!authHeader?.startsWith("Bearer ")) {
         return res.status(401).json({
@@ -19,13 +19,6 @@ export const verifyToken = async (req, res, next) => {
     }
 
     const token = authHeader.slice(7);
-
-    if (!token) {
-        return res.status(401).json({
-            success: false,
-            message: "Unauthorized. Token is missing.",
-        });
-    }
 
     try {
         const { payload } = await jwtVerify(token, JWKS);

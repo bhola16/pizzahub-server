@@ -44,7 +44,7 @@ export const verifyCustomer = async (req, res, next) => {
 
         req.dbUser = customer;
         req.customer = customer;
-        
+
         next();
     } catch (error) {
         console.error("Customer authorization error:", error);

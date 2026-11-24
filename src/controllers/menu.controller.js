@@ -1,25 +1,11 @@
-import { fromNodeHeaders } from "better-auth/node";
 import { ObjectId } from "mongodb";
 
 import { getDB } from "../config/db.js";
-import { auth } from "../lib/auth.js";
 
 const totalLimit =
     Number(process.env.UPGRADE_LIMIT || process.env.NEXT_PUBLIC_UPGRADE_LIMIT) || 3;
 
-const getAuthenticatedVendor = async (req) => {
-    const session = await auth.api.getSession({
-        headers: fromNodeHeaders(req.headers),
-    });
 
-    if (!session?.user?.email) {
-        return null;
-    }
-
-    return getDB().collection("user").findOne({
-        email: session.user.email,
-    });
-};
 
 
 // Get all approved and active menu items
@@ -102,8 +88,7 @@ export const getFeaturedMenuItems = async (req, res) => {
 // Add menu item
 export const addMenuItem = async (req, res) => {
     try {
-        const vendor = await getAuthenticatedVendor(req);
-
+        const vendor = req.vendor;
         if (!vendor) {
             return res.status(401).json({
                 success: false,
@@ -206,8 +191,8 @@ export const addMenuItem = async (req, res) => {
 // Get authenticated vendor's menu item count
 export const getVendorMenuItemCount = async (req, res) => {
     try {
-        const vendor = await getAuthenticatedVendor(req);
-
+        const vendor = req.vendor;
+        
         if (!vendor) {
             return res.status(401).json({
                 success: false,
