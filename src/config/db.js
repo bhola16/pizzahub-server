@@ -14,32 +14,29 @@ export const client =
     new MongoClient(uri, {
         maxPoolSize: 10,
         minPoolSize: 0,
-        maxIdleTimeMS: 0,
         serverSelectionTimeoutMS: 10000,
-        connectTimeoutMS: 10000,
     });
 
 globalForMongo.mongoClient = client;
 
 export const db = client.db("pizzahub");
 
-let connectionPromise;
 
 export async function connectToMongoDB() {
-    if (!connectionPromise) {
-        connectionPromise = client.connect()
+    if (!globalForMongo.mongoConnectionPromise) {
+        globalForMongo.mongoConnectionPromise = client.connect()
             .then(() => {
                 console.log("Successfully connected to MongoDB!");
                 return db;
             })
             .catch((error) => {
-                connectionPromise = null;
+                globalForMongo.mongoConnectionPromise = null;
                 console.error("MongoDB connection failed:", error);
                 throw error;
             });
     }
 
-    return connectionPromise;
+    return globalForMongo.mongoConnectionPromise;
 }
 
 export function getDB() {
