@@ -7,7 +7,20 @@ if (!uri) {
     throw new Error("MONGODB_URL is missing from environment variables");
 }
 
-export const client = new MongoClient(uri);
+const globalForMongo = globalThis;
+
+export const client =
+    globalForMongo.mongoClient ||
+    new MongoClient(uri, {
+        maxPoolSize: 10,
+        minPoolSize: 0,
+        maxIdleTimeMS: 0,
+        serverSelectionTimeoutMS: 10000,
+        connectTimeoutMS: 10000,
+    });
+
+globalForMongo.mongoClient = client;
+
 export const db = client.db("pizzahub");
 
 let connectionPromise;
